@@ -129,7 +129,7 @@ export function useLeafletDraw(
 
       const esriImagery = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        { maxZoom: 21, crossOrigin: true }
+        { maxZoom: 21, crossOrigin: "anonymous" }
       );
       esriImagery.addTo(map);
 

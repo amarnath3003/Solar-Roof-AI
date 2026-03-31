@@ -59,6 +59,12 @@ function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: Obstacle
   anchor.remove();
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
@@ -145,11 +151,17 @@ export default function App() {
     }
 
     try {
+      const activeMap = mapRef.current;
       setViewMode("satellite");
       setDetectionMessage(null);
 
+      // Give the satellite layer a moment to become visible before snapshot capture.
+      await delay(200);
+      activeMap.invalidateSize();
+      await delay(150);
+
       const snapshot = await captureMapSnapshot(mapContainerRef.current);
-      const bounds = mapRef.current.getBounds();
+      const bounds = activeMap.getBounds();
 
       const detection = await detectFromSnapshot({
         center: coordinates,
@@ -162,7 +174,7 @@ export default function App() {
         snapshotBase64: snapshot.snapshotBase64,
         width: snapshot.width,
         height: snapshot.height,
-        zoom: mapRef.current.getZoom(),
+        zoom: activeMap.getZoom(),
         roofConfidenceThreshold: detectionConfidenceThreshold,
         obstacleConfidenceThreshold: Math.max(0.2, detectionConfidenceThreshold - 0.05),
       });
