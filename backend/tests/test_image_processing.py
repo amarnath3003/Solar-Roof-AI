@@ -63,3 +63,36 @@ def test_analyze_snapshot_rejects_invalid_snapshot_payload() -> None:
 
     with pytest.raises(ValueError):
         analyze_snapshot(request)
+
+
+def test_analyze_snapshot_prioritizes_center_house_region() -> None:
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+
+    # Main house roof near center.
+    cv2.rectangle(image, (92, 88), (176, 172), (195, 195, 195), thickness=-1)
+    cv2.rectangle(image, (118, 116), (136, 132), (30, 30, 30), thickness=-1)
+
+    # Neighboring roof and dark objects away from center should be deprioritized.
+    cv2.rectangle(image, (12, 12), (72, 72), (190, 190, 190), thickness=-1)
+    cv2.rectangle(image, (24, 24), (34, 34), (20, 20, 20), thickness=-1)
+
+    snapshot = _encode_png(image)
+    request = DetectionRequest(**_request_payload(snapshot, 256, 256))
+    response = analyze_snapshot(request)
+
+    assert response.roof_planes
+    assert response.metadata.model.startswith("opencv-edge-segmentation-v3")
+
+    for roof in response.roof_planes:
+        ring = roof.geometry.coordinates[0][:-1]
+        centroid_lng = sum(point[0] for point in ring) / len(ring)
+        centroid_lat = sum(point[1] for point in ring) / len(ring)
+
+        # All roof planes should remain near the selected center house.
+        assert abs(centroid_lng - request.center.lng) < 0.006
+        assert abs(centroid_lat - request.center.lat) < 0.006
+
+    for obstacle in response.obstacles:
+        lng, lat = obstacle.geometry.coordinates
+        assert abs(lng - request.center.lng) < 0.0055
+        assert abs(lat - request.center.lat) < 0.0055

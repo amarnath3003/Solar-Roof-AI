@@ -160,7 +160,7 @@ export default function App() {
       activeMap.invalidateSize();
       await delay(150);
 
-      const snapshot = await captureMapSnapshot(mapContainerRef.current);
+      const snapshot = await captureMapSnapshot(mapContainerRef.current, activeMap);
       const bounds = activeMap.getBounds();
 
       const detection = await detectFromSnapshot({

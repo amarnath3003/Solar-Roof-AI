@@ -28,6 +28,15 @@ class PixelToGeoContext:
     north: float
 
 
+@dataclass
+class RoofCandidate:
+    plane: RoofPlane
+    bbox: tuple[int, int, int, int]
+    score: float
+    contour: np.ndarray
+    centroid: tuple[float, float]
+
+
 def _decode_image(snapshot_base64: str) -> np.ndarray:
     payload = snapshot_base64
     if "," in payload:
@@ -184,6 +193,23 @@ def _bbox_iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> flo
     return inter_area / union_area
 
 
+def _contour_centroid(contour: np.ndarray) -> tuple[float, float] | None:
+    moments = cv2.moments(contour)
+    if moments["m00"] == 0:
+        return None
+
+    return float(moments["m10"] / moments["m00"]), float(moments["m01"] / moments["m00"])
+
+
+def _center_prior(centroid: tuple[float, float], width: int, height: int) -> float:
+    cx = width / 2.0
+    cy = height / 2.0
+    dist = math.hypot(centroid[0] - cx, centroid[1] - cy)
+    norm_dist = dist / max(math.hypot(width, height), 1.0)
+    sigma = 0.22
+    return float(math.exp(-((norm_dist * norm_dist) / (2.0 * sigma * sigma))))
+
+
 def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
     started = time.perf_counter()
 
@@ -214,11 +240,19 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
     )
     image_area = float(source_width * source_height)
 
-    candidate_roof_planes: list[tuple[RoofPlane, tuple[int, int, int, int], float]] = []
+    candidate_roof_planes: list[RoofCandidate] = []
 
     for contour in roof_contours:
         area = cv2.contourArea(contour)
         if area < req.min_roof_area_px:
+            continue
+
+        centroid = _contour_centroid(contour)
+        if centroid is None:
+            continue
+
+        center_prior = _center_prior(centroid, source_width, source_height)
+        if center_prior < 0.12:
             continue
 
         if _contour_touches_border(contour, source_width, source_height) and area > image_area * 0.02:
@@ -259,11 +293,17 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
             0.0,
             min(
                 1.0,
-                0.40 * solidity + 0.30 * rectangularity + 0.20 * min(edge_density * 4.5, 1.0) + 0.10 * texture_score,
+                0.32 * solidity
+                + 0.24 * rectangularity
+                + 0.18 * min(edge_density * 4.5, 1.0)
+                + 0.08 * texture_score
+                + 0.18 * center_prior,
             ),
         )
         if confidence < req.roof_confidence_threshold:
             continue
+
+        ranking_score = confidence + (0.28 * center_prior)
 
         pitch_deg, aspect_deg = _estimate_slope(gray, contour)
 
@@ -274,8 +314,8 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
         ring.append(ring[0])
 
         candidate_roof_planes.append(
-            (
-                RoofPlane(
+            RoofCandidate(
+                plane=RoofPlane(
                     id=f"roof_{uuid.uuid4().hex[:8]}",
                     confidence=round(confidence, 3),
                     estimated_pitch_degrees=pitch_deg,
@@ -283,31 +323,57 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
                     area_sq_m=round(_area_px_to_sq_m(area, req, source_width, source_height), 2),
                     geometry=PolygonGeometry(coordinates=[ring]),
                 ),
-                (x, y, w, h),
-                confidence,
+                bbox=(x, y, w, h),
+                score=ranking_score,
+                contour=contour,
+                centroid=centroid,
             )
         )
 
-    candidate_roof_planes.sort(key=lambda item: item[2], reverse=True)
+    candidate_roof_planes.sort(key=lambda item: item.score, reverse=True)
 
     roof_planes: list[RoofPlane] = []
     selected_bboxes: list[tuple[int, int, int, int]] = []
+    selected_contours: list[np.ndarray] = []
+    primary_bbox: tuple[int, int, int, int] | None = None
+    primary_centroid: tuple[float, float] | None = None
 
-    for plane, bbox, _ in candidate_roof_planes:
+    for candidate in candidate_roof_planes:
+        plane = candidate.plane
+        bbox = candidate.bbox
         is_duplicate = any(_bbox_iou(bbox, existing_bbox) > 0.55 for existing_bbox in selected_bboxes)
         if is_duplicate:
             continue
 
+        if primary_bbox is not None and primary_centroid is not None:
+            proximity_iou = _bbox_iou(bbox, primary_bbox)
+            centroid_distance = math.hypot(candidate.centroid[0] - primary_centroid[0], candidate.centroid[1] - primary_centroid[1])
+            if proximity_iou < 0.02 and centroid_distance > (max(source_width, source_height) * 0.24):
+                continue
+
         selected_bboxes.append(bbox)
         roof_planes.append(plane)
+        selected_contours.append(candidate.contour)
+        if primary_bbox is None:
+            primary_bbox = bbox
+            primary_centroid = candidate.centroid
+
         if len(roof_planes) >= req.max_roof_planes:
             break
 
     candidate_obstacles: list[tuple[Obstacle, float]] = []
+    roof_focus_mask = np.zeros(gray.shape, dtype=np.uint8)
+    if selected_contours:
+        cv2.drawContours(roof_focus_mask, selected_contours, -1, 255, thickness=-1)
+        roof_focus_mask = cv2.dilate(
+            roof_focus_mask,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19)),
+            iterations=1,
+        )
 
     for contour in obstacle_contours:
         area = cv2.contourArea(contour)
-        if area < req.min_obstacle_area_px or area > (req.min_roof_area_px * 0.45):
+        if area < req.min_obstacle_area_px or area > (req.min_roof_area_px * 0.30):
             continue
 
         if _contour_touches_border(contour, source_width, source_height):
@@ -326,12 +392,21 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
 
         c_x = float(m["m10"] / m["m00"])
         c_y = float(m["m01"] / m["m00"])
+
+        if selected_contours:
+            px = int(round(c_x))
+            py = int(round(c_y))
+            px = max(0, min(source_width - 1, px))
+            py = max(0, min(source_height - 1, py))
+            if roof_focus_mask[py, px] == 0:
+                continue
+
         location = _pixel_to_geo((c_x, c_y), ctx)
 
         x, y, w, h = cv2.boundingRect(contour)
         roi = gray[y : y + h, x : x + w]
         contrast = 0.0 if roi.size == 0 else float(np.std(roi) / 80.0)
-        confidence = max(0.1, min(1.0, 0.35 + min(contrast, 0.7) * 0.55 + min(circularity, 1.0) * 0.10))
+        confidence = max(0.1, min(1.0, 0.25 + min(contrast, 0.7) * 0.50 + min(circularity, 1.0) * 0.15))
         if confidence < req.obstacle_confidence_threshold:
             continue
 
@@ -386,7 +461,7 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
         obstacle_candidates=len(obstacle_contours),
         filtered_roof_planes=len(roof_planes),
         filtered_obstacles=len(obstacles),
-        model="opencv-edge-segmentation-v2",
+        model="opencv-edge-segmentation-v3-center-prior",
         image_quality=image_quality,
         input_width=source_width,
         input_height=source_height,
