@@ -1,24 +1,5 @@
-.leaflet-container {
-  background: #050505;
-}
-
-.monochrome-tooltip {
-  background: rgba(10, 10, 10, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  color: #f4f4f5;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  padding: 4px 8px;
-  text-transform: uppercase;
-}
-
-.monochrome-tooltip:before {
-  border-top-color: rgba(255, 255, 255, 0.2);
-}
-
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -26,22 +7,170 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.3);
 }
 
-.leaflet-draw-toolbar a,
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.leaflet-container {
+  font-family: inherit !important;
+  background: transparent !important;
+  outline: none !important;
+  touch-action: none !important;
+}
+
+.leaflet-control-zoom,
+.leaflet-draw-toolbar {
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(12px) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  margin-top: 16px !important;
+  margin-right: 16px !important;
+}
+
+.leaflet-control-zoom a,
+.leaflet-draw-toolbar a {
+  background-color: transparent !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  transition: all 0.2s ease-out;
+}
+
+.leaflet-control-zoom a:hover,
+.leaflet-draw-toolbar a:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+path.leaflet-interactive {
+  transition: stroke-width 0.3s ease, fill-opacity 0.3s ease;
+}
+
+path.leaflet-interactive:hover {
+  stroke-width: 3px !important;
+}
+
+.leaflet-draw-actions {
+  background: rgba(0, 0, 0, 0.85) !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(12px) !important;
+  display: flex !important;
+  flex-direction: row;
+  padding: 0 !important;
+  margin-left: 12px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  left: 40px !important;
+  position: absolute !important;
+}
+
+.leaflet-draw-actions li {
+  list-style: none !important;
+  margin: 0 !important;
+  display: block !important;
+}
+
 .leaflet-draw-actions a {
-  background: rgba(10, 10, 10, 0.88);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #fafafa;
+  background-color: transparent !important;
+  color: #fff !important;
+  font-family: inherit !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  padding: 10px 14px !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+  display: block !important;
+  transition: all 0.2s ease !important;
+  text-decoration: none !important;
+  height: auto !important;
+  width: auto !important;
+  line-height: 1 !important;
+  border-radius: 0 !important;
 }
 
-.leaflet-draw-toolbar a:hover,
 .leaflet-draw-actions a:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.leaflet-draw-actions li:last-child a {
+  border-right: none !important;
+}
+
+.leaflet-editing-icon {
+  border-radius: 50% !important;
+  border: 2px solid #000 !important;
+  background-color: #fff !important;
+  width: 12px !important;
+  height: 12px !important;
+  margin-left: -6px !important;
+  margin-top: -6px !important;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8) !important;
+  transition: transform 0.2s;
+}
+
+.leaflet-editing-icon:hover {
+  transform: scale(1.2);
+}
+
+.leaflet-marker-icon.custom-monochrome-marker {
+  background: transparent;
+  border: none;
+}
+
+.leaflet-draw-tooltip,
+.monochrome-tooltip {
+  background: rgba(0, 0, 0, 0.85) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(12px) !important;
+  font-family: inherit !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  padding: 6px 10px !important;
+  margin-top: -12px !important;
+}
+
+.leaflet-draw-tooltip:before,
+.leaflet-tooltip-top:before,
+.monochrome-tooltip:before {
+  border-top-color: rgba(0, 0, 0, 0.8) !important;
+  border-right-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.leaflet-draw-guide-dash {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  border: 1px solid #000;
+  margin-left: -3px;
+  margin-top: -3px;
 }
