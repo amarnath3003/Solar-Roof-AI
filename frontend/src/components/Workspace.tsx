@@ -1,8 +1,8 @@
 import React from "react";
-import { Circle, Download, Layers, Monitor, Search, Square, Trash2 } from "lucide-react";
+import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Search, Square, Trash2, X } from "lucide-react";
 import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
-import { Coordinates, ObstacleMarker, RoofElement, ViewMode } from "@/types";
+import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofElement, ViewMode } from "@/types";
 
 type WorkspaceContentProps = {
   coordinates: Coordinates | null;
@@ -13,6 +13,14 @@ type WorkspaceContentProps = {
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
   onClearAll: () => void;
   onExport: () => void;
+  onAutoDetect: () => void;
+  onAcceptDetection: () => void;
+  onRejectDetection: () => void;
+  isAutoDetecting: boolean;
+  detectionPreview: AutoRoofDetectionResult | null;
+  detectionMessage: string | null;
+  detectionConfidenceThreshold: number;
+  onDetectionConfidenceThresholdChange: (next: number) => void;
 };
 
 function EmptyState() {
@@ -64,11 +72,27 @@ function WorkspaceDataPanel({
   obstacleMarkers,
   onClearAll,
   onExport,
+  onAutoDetect,
+  onAcceptDetection,
+  onRejectDetection,
+  isAutoDetecting,
+  detectionPreview,
+  detectionMessage,
+  detectionConfidenceThreshold,
+  onDetectionConfidenceThresholdChange,
 }: {
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
   onClearAll: () => void;
   onExport: () => void;
+  onAutoDetect: () => void;
+  onAcceptDetection: () => void;
+  onRejectDetection: () => void;
+  isAutoDetecting: boolean;
+  detectionPreview: AutoRoofDetectionResult | null;
+  detectionMessage: string | null;
+  detectionConfidenceThreshold: number;
+  onDetectionConfidenceThresholdChange: (next: number) => void;
 }) {
   return (
     <div className="w-full lg:w-72 flex flex-col gap-6 shrink-0 animate-fade-in-up mt-6 lg:mt-0">
@@ -88,7 +112,32 @@ function WorkspaceDataPanel({
           </div>
         </div>
 
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 flex flex-col gap-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Detection Confidence</div>
+          <div className="text-xs text-zinc-200">{Math.round(detectionConfidenceThreshold * 100)}%</div>
+          <input
+            type="range"
+            min={30}
+            max={90}
+            step={5}
+            value={Math.round(detectionConfidenceThreshold * 100)}
+            onChange={(event) => onDetectionConfidenceThresholdChange(Number(event.target.value) / 100)}
+            className="w-full accent-cyan-400"
+          />
+        </div>
+
         <div className="flex flex-col gap-3 mt-2 pt-6 border-t border-white/5">
+          <Button variant="primary" className="w-full" onClick={onAutoDetect} disabled={isAutoDetecting}>
+            {isAutoDetecting ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Detecting Roof...
+              </>
+            ) : (
+              <>
+                <Bot size={14} /> Auto Detect Roof
+              </>
+            )}
+          </Button>
           <Button
             variant="ghost"
             className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
@@ -100,6 +149,40 @@ function WorkspaceDataPanel({
             <Download size={14} /> Export GeoJSON
           </Button>
         </div>
+
+        {detectionMessage && (
+          <div className="rounded-2xl border border-white/15 bg-black/40 px-4 py-3 text-[10px] uppercase tracking-[0.12em] text-zinc-300 leading-relaxed">
+            {detectionMessage}
+          </div>
+        )}
+
+        {detectionPreview && (
+          <div className="rounded-2xl border border-cyan-400/40 bg-cyan-500/10 p-4 flex flex-col gap-3">
+            <div className="text-[10px] uppercase tracking-[0.15em] text-cyan-200">Detection Preview</div>
+            <div className="text-[10px] text-cyan-100/80 uppercase tracking-wider">
+              {detectionPreview.roofPlanes.length} roof plane(s), {detectionPreview.obstacles.length} obstacle(s)
+            </div>
+            <div className="text-[10px] text-cyan-100/80 uppercase tracking-wider">
+              Model {detectionPreview.metadata.model} | {detectionPreview.metadata.processingMs}ms
+            </div>
+            <div className="text-[10px] text-cyan-100/80 uppercase tracking-wider">
+              Filtered {detectionPreview.metadata.filteredRoofPlanes}/{detectionPreview.metadata.roofCandidates} roofs
+            </div>
+            {detectionPreview.metadata.warningCodes.length > 0 && (
+              <div className="text-[10px] text-cyan-100/80 uppercase tracking-wider">
+                Warnings: {detectionPreview.metadata.warningCodes.join(", ")}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="primary" className="w-full" onClick={onAcceptDetection}>
+                <Check size={12} /> Accept
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={onRejectDetection}>
+                <X size={12} /> Reject
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card className="flex-1 flex flex-col gap-4">
@@ -116,7 +199,7 @@ function WorkspaceDataPanel({
                   key={element.id}
                   className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-lg flex items-center gap-2 tracking-wide font-mono border border-white/5"
                 >
-                  <Square size={10} className="text-white/60" /> {element.type.toUpperCase()} #{element.id.toString().slice(-4)}
+                  <Square size={10} className="text-white/60" /> {element.type.toUpperCase()} #{element.id.toString().slice(-4)} {element.source === "auto-detected" ? "AI" : "MAN"}
                 </div>
               ))}
               {obstacleMarkers.map((marker) => (
@@ -124,7 +207,7 @@ function WorkspaceDataPanel({
                   key={marker.id}
                   className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-lg flex items-center gap-2 tracking-wide font-mono border border-white/5"
                 >
-                  <Circle size={10} className="text-white/60" /> MKR #{marker.id.toString().slice(-4)}
+                  <Circle size={10} className="text-white/60" /> MKR #{marker.id.toString().slice(-4)} {marker.source === "auto-detected" ? "AI" : "MAN"}
                 </div>
               ))}
             </>
@@ -144,6 +227,14 @@ export function WorkspaceContent({
   mapContainerRef,
   onClearAll,
   onExport,
+  onAutoDetect,
+  onAcceptDetection,
+  onRejectDetection,
+  isAutoDetecting,
+  detectionPreview,
+  detectionMessage,
+  detectionConfidenceThreshold,
+  onDetectionConfidenceThresholdChange,
 }: WorkspaceContentProps) {
   if (!coordinates) {
     return <EmptyState />;
@@ -158,6 +249,14 @@ export function WorkspaceContent({
           obstacleMarkers={obstacleMarkers}
           onClearAll={onClearAll}
           onExport={onExport}
+          onAutoDetect={onAutoDetect}
+          onAcceptDetection={onAcceptDetection}
+          onRejectDetection={onRejectDetection}
+          isAutoDetecting={isAutoDetecting}
+          detectionPreview={detectionPreview}
+          detectionMessage={detectionMessage}
+          detectionConfidenceThreshold={detectionConfidenceThreshold}
+          onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
         />
       )}
     </div>

@@ -1,7 +1,27 @@
 import { useCallback, useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet-draw";
-import { Coordinates, RoofElement, ObstacleMarker } from "@/types";
+import { AutoRoofDetectionResult, Coordinates, RoofElement, ObstacleMarker } from "@/types";
+
+function createObstacleIcon() {
+  return L.divIcon({
+    className: "custom-monochrome-marker",
+    html: `<div class="w-4 h-4 bg-white rounded-full border-[3px] border-black shadow-[0_0_15px_rgba(255,255,255,0.5)]"></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+}
+
+function toLatLngRing(ring: number[][]): L.LatLngExpression[] {
+  const normalizedRing =
+    ring.length > 1 &&
+    ring[0][0] === ring[ring.length - 1][0] &&
+    ring[0][1] === ring[ring.length - 1][1]
+      ? ring.slice(0, ring.length - 1)
+      : ring;
+
+  return normalizedRing.map((point) => [point[1], point[0]] as [number, number]);
+}
 
 export function useLeafletDraw(
   coordinates: Coordinates | null,
@@ -13,6 +33,7 @@ export function useLeafletDraw(
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
+  const previewGroupRef = useRef<L.FeatureGroup | null>(null);
   const drawControlRef = useRef<L.Control | null>(null);
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
 
@@ -35,7 +56,14 @@ export function useLeafletDraw(
       const position = layer.getLatLng();
       setObstacleMarkers((prev) => [
         ...prev,
-        { id: Date.now(), layerId: id, type: "obstacle", position: [position.lat, position.lng], label: "Obstacle" },
+        {
+          id: Date.now(),
+          layerId: id,
+          type: "obstacle",
+          position: [position.lat, position.lng],
+          label: "Obstacle",
+          source: "manual",
+        },
       ]);
       layer.bindTooltip("Obstacle", { direction: "top", className: "monochrome-tooltip" });
       return;
@@ -50,6 +78,7 @@ export function useLeafletDraw(
         type: getGeometryType(layer),
         geoJSON,
         style: { color: "#ffffff" },
+        source: "manual",
       },
     ]);
   }, [setObstacleMarkers, setRoofElements]);
@@ -100,14 +129,17 @@ export function useLeafletDraw(
 
       const esriImagery = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        { maxZoom: 21 }
+        { maxZoom: 21, crossOrigin: true }
       );
       esriImagery.addTo(map);
 
       const drawnItems = new L.FeatureGroup();
+      const previewItems = new L.FeatureGroup();
       map.addLayer(drawnItems);
+      map.addLayer(previewItems);
       mapRef.current = map;
       featureGroupRef.current = drawnItems;
+      previewGroupRef.current = previewItems;
     }
     mapRef.current.setView([coordinates.lat, coordinates.lng], 19);
     if (locationMarkerRef.current) mapRef.current.removeLayer(locationMarkerRef.current);
@@ -140,12 +172,7 @@ export function useLeafletDraw(
           circle: { shapeOptions: { color: "#ffffff", weight: 2, opacity: 0.8, fill: true, fillColor: "#ffffff", fillOpacity: 0.1 } },
           rectangle: { shapeOptions: { color: "#ffffff", weight: 2, opacity: 0.8, fill: true, fillColor: "#ffffff", fillOpacity: 0.1 } },
           marker: {
-            icon: L.divIcon({
-              className: "custom-monochrome-marker",
-              html: `<div class="w-4 h-4 bg-white rounded-full border-[3px] border-black shadow-[0_0_15px_rgba(255,255,255,0.5)]"></div>`,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8],
-            }),
+            icon: createObstacleIcon(),
           },
           circlemarker: false,
         },
@@ -177,5 +204,126 @@ export function useLeafletDraw(
     syncDrawTools();
   }, [syncDrawTools]);
 
-  return { mapContainerRef, mapRef, featureGroupRef };
+  const clearDetectionPreview = useCallback(() => {
+    previewGroupRef.current?.clearLayers();
+  }, []);
+
+  const showDetectionPreview = useCallback((result: AutoRoofDetectionResult) => {
+    if (!previewGroupRef.current) return;
+
+    previewGroupRef.current.clearLayers();
+
+    result.roofPlanes.forEach((plane) => {
+      const ring = plane.geometry.coordinates[0];
+      if (!ring || ring.length < 4) return;
+
+      const layer = L.polygon(toLatLngRing(ring), {
+        color: "#22d3ee",
+        weight: 2,
+        opacity: 0.9,
+        fillColor: "#22d3ee",
+        fillOpacity: 0.18,
+        dashArray: "7, 5",
+        interactive: false,
+      });
+      layer.bindTooltip(
+        `Roof ${(plane.confidence * 100).toFixed(0)}% | ${plane.estimatedPitchDegrees.toFixed(1)}deg`,
+        {
+          direction: "top",
+          className: "monochrome-tooltip",
+        }
+      );
+      previewGroupRef.current?.addLayer(layer);
+    });
+
+    result.obstacles.forEach((obstacle) => {
+      const [lng, lat] = obstacle.geometry.coordinates;
+      const marker = L.circleMarker([lat, lng], {
+        radius: 6,
+        color: "#f97316",
+        fillColor: "#f97316",
+        fillOpacity: 0.9,
+        weight: 2,
+        interactive: false,
+      });
+      marker.bindTooltip(`Obstacle ${(obstacle.confidence * 100).toFixed(0)}%`, {
+        direction: "top",
+        className: "monochrome-tooltip",
+      });
+      previewGroupRef.current?.addLayer(marker);
+    });
+  }, []);
+
+  const acceptDetectionPreview = useCallback((result: AutoRoofDetectionResult) => {
+    if (!featureGroupRef.current) return;
+
+    const createdRoofElements: RoofElement[] = [];
+    const createdObstacles: ObstacleMarker[] = [];
+
+    result.roofPlanes.forEach((plane) => {
+      const ring = plane.geometry.coordinates[0];
+      if (!ring || ring.length < 4) return;
+
+      const polygonLayer = L.polygon(toLatLngRing(ring), {
+        color: "#ffffff",
+        weight: 2,
+        opacity: 0.8,
+        fillColor: "#ffffff",
+        fillOpacity: 0.1,
+      });
+      featureGroupRef.current?.addLayer(polygonLayer);
+      const layerId = featureGroupRef.current?.getLayerId(polygonLayer) ?? Date.now();
+
+      createdRoofElements.push({
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        layerId,
+        type: "polygon",
+        geoJSON: polygonLayer.toGeoJSON() as GeoJSON.Feature,
+        style: { color: "#ffffff" },
+        source: "auto-detected",
+        confidence: plane.confidence,
+        slope: {
+          pitchDegrees: plane.estimatedPitchDegrees,
+          aspectDegrees: plane.aspectDegrees,
+        },
+      });
+    });
+
+    result.obstacles.forEach((obstacle) => {
+      const [lng, lat] = obstacle.geometry.coordinates;
+      const markerLayer = L.marker([lat, lng], { icon: createObstacleIcon() });
+      featureGroupRef.current?.addLayer(markerLayer);
+      markerLayer.bindTooltip("Obstacle", { direction: "top", className: "monochrome-tooltip" });
+      const layerId = featureGroupRef.current?.getLayerId(markerLayer) ?? Date.now();
+
+      createdObstacles.push({
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        layerId,
+        type: "obstacle",
+        position: [lat, lng],
+        label: obstacle.obstacleType,
+        source: "auto-detected",
+        confidence: obstacle.confidence,
+        estimatedHeightM: obstacle.estimatedHeightM,
+      });
+    });
+
+    if (createdRoofElements.length > 0) {
+      setRoofElements((previous) => [...previous, ...createdRoofElements]);
+    }
+    if (createdObstacles.length > 0) {
+      setObstacleMarkers((previous) => [...previous, ...createdObstacles]);
+    }
+
+    previewGroupRef.current?.clearLayers();
+  }, [setObstacleMarkers, setRoofElements]);
+
+  return {
+    mapContainerRef,
+    mapRef,
+    featureGroupRef,
+    showDetectionPreview,
+    clearDetectionPreview,
+    acceptDetectionPreview,
+  };
 }

@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./styles.css";
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 import { DesktopSidebar, MainHeader, MobileMenuOverlay } from "@/components/Layout";
 import { WorkspaceContent } from "@/components/Workspace";
+import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
+import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import "@/styles/leaflet-custom.css";
-import { ObstacleMarker, RoofElement, ViewMode } from "@/types";
+import { AutoRoofDetectionResult, ObstacleMarker, RoofElement, ViewMode } from "@/types";
 
 function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: ObstacleMarker[]) {
   const featureCollection: GeoJSON.FeatureCollection = {
@@ -22,6 +24,9 @@ function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: Obstacle
               ...(element.geoJSON.properties ?? {}),
               elementType: element.type,
               style: element.style,
+              source: element.source,
+              confidence: element.confidence,
+              slope: element.slope,
             },
           }) as GeoJSON.Feature
       ),
@@ -36,6 +41,9 @@ function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: Obstacle
             properties: {
               type: marker.type,
               label: marker.label,
+              source: marker.source,
+              confidence: marker.confidence,
+              estimatedHeightM: marker.estimatedHeightM,
             },
           }) as GeoJSON.Feature
       ),
@@ -57,6 +65,9 @@ export default function App() {
   const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
   const [showMapTools, setShowMapTools] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("normal");
+  const [detectionConfidenceThreshold, setDetectionConfidenceThreshold] = useState(0.45);
+  const [detectionPreview, setDetectionPreview] = useState<AutoRoofDetectionResult | null>(null);
+  const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
 
   const {
     address,
@@ -74,7 +85,21 @@ export default function App() {
     },
   });
 
-  const { mapContainerRef, featureGroupRef } = useLeafletDraw(
+  const {
+    detectFromSnapshot,
+    isDetecting,
+    error: detectionError,
+    clearError: clearDetectionError,
+  } = useAutoRoofDetection();
+
+  const {
+    mapContainerRef,
+    mapRef,
+    featureGroupRef,
+    showDetectionPreview,
+    clearDetectionPreview,
+    acceptDetectionPreview,
+  } = useLeafletDraw(
     coordinates,
     viewMode,
     showMapTools,
@@ -82,16 +107,29 @@ export default function App() {
     setObstacleMarkers
   );
 
+  useEffect(() => {
+    setDetectionPreview(null);
+    setDetectionMessage(null);
+    clearDetectionPreview();
+    clearDetectionError();
+  }, [coordinates, clearDetectionError, clearDetectionPreview]);
+
   const toggleWorkspace = () => {
     setShowMapTools((previous) => {
       const next = !previous;
       if (next) setViewMode("satellite");
+      if (!next) {
+        setDetectionPreview(null);
+        clearDetectionPreview();
+      }
       return next;
     });
   };
 
   const clearAllData = () => {
     featureGroupRef.current?.clearLayers();
+    clearDetectionPreview();
+    setDetectionPreview(null);
     setRoofElements([]);
     setObstacleMarkers([]);
   };
@@ -99,6 +137,75 @@ export default function App() {
   const exportGeoJson = () => {
     downloadRoofData(roofElements, obstacleMarkers);
   };
+
+  const runAutoDetection = useCallback(async () => {
+    if (!coordinates || !mapRef.current || !mapContainerRef.current) {
+      setDetectionMessage("Select a house location and open workspace before running auto detection.");
+      return;
+    }
+
+    try {
+      setViewMode("satellite");
+      setDetectionMessage(null);
+
+      const snapshot = await captureMapSnapshot(mapContainerRef.current);
+      const bounds = mapRef.current.getBounds();
+
+      const detection = await detectFromSnapshot({
+        center: coordinates,
+        bounds: {
+          west: bounds.getWest(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          north: bounds.getNorth(),
+        },
+        snapshotBase64: snapshot.snapshotBase64,
+        width: snapshot.width,
+        height: snapshot.height,
+        zoom: mapRef.current.getZoom(),
+        roofConfidenceThreshold: detectionConfidenceThreshold,
+        obstacleConfidenceThreshold: Math.max(0.2, detectionConfidenceThreshold - 0.05),
+      });
+
+      setDetectionPreview(detection);
+      showDetectionPreview(detection);
+
+      if (detection.roofPlanes.length === 0) {
+        setDetectionMessage("No high-confidence roof edges found. Try zooming in and rerun detection.");
+      } else if (detection.metadata.warnings.length > 0) {
+        setDetectionMessage(detection.metadata.warnings[0]);
+      }
+    } catch (error) {
+      clearDetectionPreview();
+      setDetectionPreview(null);
+      const fallbackMessage =
+        "Auto detection failed. This can happen when tile snapshots are blocked by imagery CORS rules. Continue with manual mapping for this location.";
+      setDetectionMessage(error instanceof Error ? error.message : fallbackMessage);
+    }
+  }, [
+    coordinates,
+    detectFromSnapshot,
+    detectionConfidenceThreshold,
+    mapContainerRef,
+    mapRef,
+    showDetectionPreview,
+    clearDetectionPreview,
+  ]);
+
+  const acceptAutoDetection = useCallback(() => {
+    if (!detectionPreview) return;
+    acceptDetectionPreview(detectionPreview);
+    setDetectionMessage(
+      `Accepted ${detectionPreview.roofPlanes.length} roof plane(s) and ${detectionPreview.obstacles.length} obstacle(s).`
+    );
+    setDetectionPreview(null);
+  }, [acceptDetectionPreview, detectionPreview]);
+
+  const rejectAutoDetection = useCallback(() => {
+    clearDetectionPreview();
+    setDetectionPreview(null);
+    setDetectionMessage("Detection preview cleared. You can rerun auto detection or continue manual mapping.");
+  }, [clearDetectionPreview]);
 
   return (
     <div className="flex h-screen bg-[#050505] font-sans text-zinc-100 overflow-hidden relative selection:bg-white/20 selection:text-white">
@@ -145,6 +252,14 @@ export default function App() {
             mapContainerRef={mapContainerRef}
             onClearAll={clearAllData}
             onExport={exportGeoJson}
+            onAutoDetect={runAutoDetection}
+            onAcceptDetection={acceptAutoDetection}
+            onRejectDetection={rejectAutoDetection}
+            isAutoDetecting={isDetecting}
+            detectionPreview={detectionPreview}
+            detectionMessage={detectionMessage ?? detectionError}
+            detectionConfidenceThreshold={detectionConfidenceThreshold}
+            onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
           />
         </div>
       </main>
