@@ -1,170 +1,233 @@
-/* Base styles */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  color: #dcdfe4;
-  background-color: #404552;
+@theme inline {
+
+  --font-heading: var(--font-sans);
+
+  --font-sans: 'Geist Variable', sans-serif;
+
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-sidebar-border: var(--sidebar-border);
+
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+
+  --color-sidebar-accent: var(--sidebar-accent);
+
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+
+  --color-sidebar-primary: var(--sidebar-primary);
+
+  --color-sidebar-foreground: var(--sidebar-foreground);
+
+  --color-sidebar: var(--sidebar);
+
+  --color-chart-5: var(--chart-5);
+
+  --color-chart-4: var(--chart-4);
+
+  --color-chart-3: var(--chart-3);
+
+  --color-chart-2: var(--chart-2);
+
+  --color-chart-1: var(--chart-1);
+
+  --color-ring: var(--ring);
+
+  --color-input: var(--input);
+
+  --color-border: var(--border);
+
+  --color-destructive: var(--destructive);
+
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-accent: var(--accent);
+
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-muted: var(--muted);
+
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-secondary: var(--secondary);
+
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-primary: var(--primary);
+
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-popover: var(--popover);
+
+  --color-card-foreground: var(--card-foreground);
+
+  --color-card: var(--card);
+
+  --color-foreground: var(--foreground);
+
+  --color-background: var(--background);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+
+  --radius-md: calc(var(--radius) * 0.8);
+
+  --radius-lg: var(--radius);
+
+  --radius-xl: calc(var(--radius) * 1.4);
+
+  --radius-2xl: calc(var(--radius) * 1.8);
+
+  --radius-3xl: calc(var(--radius) * 2.2);
+
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Custom styles for Leaflet controls to match our theme */
-.leaflet-control-zoom {
-  border: none !important;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4) !important;
+:root {
+
+  --background: oklch(1 0 0);
+
+  --foreground: oklch(0.145 0 0);
+
+  --card: oklch(1 0 0);
+
+  --card-foreground: oklch(0.145 0 0);
+
+  --popover: oklch(1 0 0);
+
+  --popover-foreground: oklch(0.145 0 0);
+
+  --primary: oklch(0.205 0 0);
+
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.97 0 0);
+
+  --secondary-foreground: oklch(0.205 0 0);
+
+  --muted: oklch(0.97 0 0);
+
+  --muted-foreground: oklch(0.556 0 0);
+
+  --accent: oklch(0.97 0 0);
+
+  --accent-foreground: oklch(0.205 0 0);
+
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: oklch(0.922 0 0);
+
+  --input: oklch(0.922 0 0);
+
+  --ring: oklch(0.708 0 0);
+
+  --chart-1: oklch(0.87 0 0);
+
+  --chart-2: oklch(0.556 0 0);
+
+  --chart-3: oklch(0.439 0 0);
+
+  --chart-4: oklch(0.371 0 0);
+
+  --chart-5: oklch(0.269 0 0);
+
+  --radius: 0.625rem;
+
+  --sidebar: oklch(0.985 0 0);
+
+  --sidebar-foreground: oklch(0.145 0 0);
+
+  --sidebar-primary: oklch(0.205 0 0);
+
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+
+  --sidebar-accent: oklch(0.97 0 0);
+
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+
+  --sidebar-border: oklch(0.922 0 0);
+
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
-.leaflet-control-zoom a {
-  background-color: #383c4a !important;
-  color: #dcdfe4 !important;
-  border-color: #4b5162 !important;
-}
+.dark {
 
-.leaflet-control-zoom a:hover {
-  background-color: #4b5162 !important;
-  color: #5294e2 !important;
-}
+  --background: oklch(0.145 0 0);
 
-.leaflet-bar {
-  border-radius: 4px !important;
-  overflow: hidden;
-}
+  --foreground: oklch(0.985 0 0);
 
-/* Style Leaflet draw control buttons */
-.leaflet-draw {
-  margin-top: 15px !important;
-}
+  --card: oklch(0.205 0 0);
 
-.leaflet-draw-toolbar a {
-  background-color: #383c4a !important;
-  border-color: #4b5162 !important;
-}
+  --card-foreground: oklch(0.985 0 0);
 
-.leaflet-draw-toolbar a:hover {
-  background-color: #4b5162 !important;
-}
+  --popover: oklch(0.205 0 0);
 
-.leaflet-draw-toolbar .leaflet-draw-draw-polygon,
-.leaflet-draw-toolbar .leaflet-draw-draw-rectangle {
-  background-image: url("https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/images/spritesheet.png") !important;
-}
+  --popover-foreground: oklch(0.985 0 0);
 
-.leaflet-touch .leaflet-draw-toolbar .leaflet-draw-draw-polygon {
-  background-position: -31px -2px !important;
-}
+  --primary: oklch(0.922 0 0);
 
-.leaflet-touch .leaflet-draw-toolbar .leaflet-draw-draw-rectangle {
-  background-position: -62px -2px !important;
-}
+  --primary-foreground: oklch(0.205 0 0);
 
-.leaflet-touch .leaflet-draw-toolbar .leaflet-draw-draw-circle {
-  background-position: -92px -2px !important;
-}
+  --secondary: oklch(0.269 0 0);
 
-.leaflet-touch .leaflet-draw-toolbar .leaflet-draw-draw-marker {
-  background-position: -122px -2px !important;
-}
+  --secondary-foreground: oklch(0.985 0 0);
 
-.leaflet-touch .leaflet-draw-toolbar .leaflet-draw-draw-polyline {
-  background-position: -2px -2px !important;
-}
+  --muted: oklch(0.269 0 0);
 
-/* Style for sidebar elements */
-.sidebar-section {
-  position: relative;
-}
+  --muted-foreground: oklch(0.708 0 0);
 
-.sidebar-section h3 {
-  font-size: 18px;
-  font-weight: 500;
-}
+  --accent: oklch(0.269 0 0);
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
+  --accent-foreground: oklch(0.985 0 0);
 
-::-webkit-scrollbar-track {
-  background: #383c4a;
-}
+  --destructive: oklch(0.704 0.191 22.216);
 
-::-webkit-scrollbar-thumb {
-  background: #4b5162;
-  border-radius: 4px;
-}
+  --border: oklch(1 0 0 / 10%);
 
-::-webkit-scrollbar-thumb:hover {
-  background: #5294e2;
-}
+  --input: oklch(1 0 0 / 15%);
 
-/* Input focus styles */
-input:focus {
-  outline: 2px solid #5294e2;
-}
+  --ring: oklch(0.556 0 0);
 
-/* Button hover effects */
-button:hover {
-  opacity: 0.9;
-}
+  --chart-1: oklch(0.87 0 0);
 
-button:active {
-  transform: translateY(1px);
-}
+  --chart-2: oklch(0.556 0 0);
 
-/* Range input (slider) styling */
-input[type="range"] {
-  height: 8px;
-  border-radius: 4px;
-  background: #4b5162;
-  outline: none;
-  -webkit-appearance: none;
-  margin-bottom: 8px;
-}
+  --chart-3: oklch(0.439 0 0);
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #5294e2;
-  cursor: pointer;
-}
+  --chart-4: oklch(0.371 0 0);
 
-input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #5294e2;
-  cursor: pointer;
-  border: none;
-}
+  --chart-5: oklch(0.269 0 0);
 
-/* Google Places Autocomplete styling */
-.pac-container {
-  background-color: #383c4a;
-  border: 1px solid #4b5162;
-  border-radius: 0 0 4px 4px;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
+  --sidebar: oklch(0.205 0 0);
 
-.pac-item {
-  padding: 8px 10px;
-  color: #dcdfe4;
-  border-top: 1px solid #4b5162;
-}
+  --sidebar-foreground: oklch(0.985 0 0);
 
-.pac-item:hover {
-  background-color: #111e41;
-}
+  --sidebar-primary: oklch(0.488 0.243 264.376);
 
-.pac-item-query {
-  color: #5294e2;
-  font-size: 14px;
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+
+  --sidebar-accent: oklch(0.269 0 0);
+
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+
+  --sidebar-border: oklch(1 0 0 / 10%);
+
+  --sidebar-ring: oklch(0.556 0 0);
 }
