@@ -1,137 +1,153 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./styles.css";
 
-// Import Leaflet directly to ensure it's available before react-leaflet is used
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
-// Import Leaflet Draw plugin properly
 import "leaflet-draw";
 import "leaflet-draw/dist/leaflet.draw.css";
 
+type Coordinates = {
+  lat: number;
+  lng: number;
+};
+
+type NominatimResult = {
+  display_name: string;
+  lat: string;
+  lon: string;
+};
+
+type RoofElement = {
+  id: number;
+  layerId: number;
+  type: string;
+  geoJSON: GeoJSON.Feature;
+  style: {
+    color: string;
+  };
+};
+
+type ObstacleMarker = {
+  id: number;
+  layerId: number;
+  type: "obstacle";
+  position: [number, number];
+  label: string;
+};
+
 export default function App() {
   const [address, setAddress] = useState("");
-  const [selectedAddress, setSelectedAddress] = useState(null);
-  const [coordinates, setCoordinates] = useState(null);
-  const [imageUrl, setImageUrl] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(21);
+  const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
+  const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  // Drawing data
-  const [roofElements, setRoofElements] = useState([]);
-  const [obstacleMarkers, setObstacleMarkers] = useState([]);
-  const [showMap, setShowMap] = useState(false);
-  const [map, setMap] = useState(null);
-  const [drawControl, setDrawControl] = useState(null);
-  const [featureGroup, setFeatureGroup] = useState(null);
+  const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
+  const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
+  const [showMapTools, setShowMapTools] = useState(false);
 
-  const inputRef = useRef(null);
-  const autocompleteRef = useRef(null);
-  const imageRef = useRef(null);
-  const mapContainerRef = useRef(null);
-  // Create a ref to keep track of the feature group
-  const featureGroupRef = useRef(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const featureGroupRef = useRef<L.FeatureGroup | null>(null);
+  const drawControlRef = useRef<L.Control | null>(null);
+  const locationMarkerRef = useRef<L.CircleMarker | null>(null);
 
-  // Your Google Maps API key
-  const API_KEY = "AIzaSyB4Tq-lG0ZdXY8KuhwaJQHY4b0n1oYTfdY";
-
-  // Load Google Maps API script
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places`;
-    script.async = true;
-    script.onload = initAutocomplete;
-    document.body.appendChild(script);
-
-    return () => {
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
-    };
-  }, []);
-
-  const initAutocomplete = () => {
-    if (!inputRef.current) return;
-
-    // Initialize Google Places Autocomplete
-    autocompleteRef.current = new window.google.maps.places.Autocomplete(
-      inputRef.current,
-      { types: ["address"] }
-    );
-
-    // Add place_changed event listener
-    autocompleteRef.current.addListener("place_changed", handlePlaceSelect);
-  };
-
-  // Handle selection from Google Places Autocomplete
-  const handlePlaceSelect = () => {
-    const place = autocompleteRef.current.getPlace();
-
-    if (!place.geometry) {
-      console.error("No geometry found for this place");
+  const handleDrawCreated = useCallback((e: any) => {
+    const { layerType, layer } = e;
+    if (!featureGroupRef.current) {
       return;
     }
 
-    const formattedAddress = place.formatted_address;
-    setAddress(formattedAddress);
-    setSelectedAddress(formattedAddress);
+    featureGroupRef.current.addLayer(layer);
 
-    const coords = {
-      lat: place.geometry.location.lat(),
-      lng: place.geometry.location.lng(),
+    if (layerType === "marker") {
+      const position = (layer as L.Marker).getLatLng();
+      const newObstacle: ObstacleMarker = {
+        id: Date.now(),
+        layerId: featureGroupRef.current.getLayerId(layer),
+        type: "obstacle",
+        position: [position.lat, position.lng],
+        label: "Obstacle",
+      };
+      setObstacleMarkers((prevMarkers) => [...prevMarkers, newObstacle]);
+      return;
+    }
+
+    const geoJSON = layer.toGeoJSON() as GeoJSON.Feature;
+    const newElement: RoofElement = {
+      id: Date.now(),
+      layerId: featureGroupRef.current.getLayerId(layer),
+      type: layerType,
+      geoJSON,
+      style: {
+        color:
+          layerType === "polygon" || layerType === "rectangle"
+            ? "#3388ff"
+            : layerType === "circle"
+            ? "#33cc33"
+            : "#ff3333",
+      },
     };
+    setRoofElements((prevElements) => [...prevElements, newElement]);
+  }, []);
 
-    setCoordinates(coords);
-    generateStaticMapUrl(coords, zoomLevel);
-    setShowMap(false); // Reset to show static image first
-
-    // Clean up existing map if it exists
-    if (map) {
-      map.remove();
-      setMap(null);
-      setFeatureGroup(null);
-      featureGroupRef.current = null;
+  const handleDrawEdited = useCallback((e: any) => {
+    if (!featureGroupRef.current) {
+      return;
     }
-  };
 
-  // Generate Google Maps Static API URL with specified zoom level
-  const generateStaticMapUrl = (coords, zoom) => {
-    const { lat, lng } = coords;
-    const size = "640x640";
-    const scale = 2;
+    e.layers.eachLayer((layer: L.Layer) => {
+      const id = featureGroupRef.current!.getLayerId(layer);
 
-    // Parameters to remove map UI elements
-    const url = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=${zoom}&size=${size}&scale=${scale}&maptype=satellite&style=feature:all|element:labels|visibility:off&style=feature:administrative|visibility:off&style=feature:poi|visibility:off&style=feature:road|visibility:off&style=feature:transit|visibility:off&key=${API_KEY}`;
+      if (layer instanceof L.Marker) {
+        const position = layer.getLatLng();
+        setObstacleMarkers((prevMarkers) =>
+          prevMarkers.map((obstacle) =>
+            obstacle.layerId === id
+              ? { ...obstacle, position: [position.lat, position.lng] }
+              : obstacle
+          )
+        );
+        return;
+      }
 
-    setImageUrl(url);
-  };
+      const geoJSON = (layer as any).toGeoJSON() as GeoJSON.Feature;
+      setRoofElements((prevElements) =>
+        prevElements.map((element) =>
+          element.layerId === id ? { ...element, geoJSON } : element
+        )
+      );
+    });
+  }, []);
 
-  // Handle zoom level change
-  const handleZoomChange = (newZoom) => {
-    setZoomLevel(newZoom);
-    if (coordinates) {
-      generateStaticMapUrl(coordinates, newZoom);
+  const handleDrawDeleted = useCallback((e: any) => {
+    if (!featureGroupRef.current) {
+      return;
     }
-  };
 
-  // Show Leaflet map for roof tracing
-  const showLeafletMap = () => {
-    setShowMap(true);
+    e.layers.eachLayer((layer: L.Layer) => {
+      const id = featureGroupRef.current!.getLayerId(layer);
 
-    // Initialize the map after the component renders
-    setTimeout(() => {
-      initializeMap();
-    }, 100);
-  };
+      if (layer instanceof L.Marker) {
+        setObstacleMarkers((prevMarkers) =>
+          prevMarkers.filter((obstacle) => obstacle.layerId !== id)
+        );
+        return;
+      }
 
-  // Initialize Leaflet map
-  const initializeMap = () => {
-    if (!coordinates || !mapContainerRef.current) return;
+      setRoofElements((prevElements) =>
+        prevElements.filter((element) => element.layerId !== id)
+      );
+    });
+  }, []);
 
-    // Create a map if it doesn't exist
-    if (!map) {
-      // Fix for marker icons not showing
-      delete L.Icon.Default.prototype._getIconUrl;
+  const setupMapIfNeeded = useCallback(() => {
+    if (!coordinates || !mapContainerRef.current) {
+      return;
+    }
+
+    if (!mapRef.current) {
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl:
           "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
@@ -141,28 +157,79 @@ export default function App() {
           "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
       });
 
-      const newMap = L.map(mapContainerRef.current).setView(
-        [coordinates.lat, coordinates.lng],
-        20
+      const map = L.map(mapContainerRef.current, {
+        zoomControl: true,
+      }).setView([coordinates.lat, coordinates.lng], 20);
+
+      const esriImagery = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          maxZoom: 21,
+          attribution:
+            "Tiles &copy; Esri, Maxar, Earthstar Geographics, and contributors",
+        }
       );
 
-      // Add satellite tile layer
-      L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", {
-        maxZoom: 22,
-        subdomains: ["mt0", "mt1", "mt2", "mt3"],
-        attribution: "Google Maps",
-      }).addTo(newMap);
+      const osmStreets = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          maxZoom: 20,
+          attribution: "&copy; OpenStreetMap contributors",
+        }
+      );
 
-      // Create feature group for drawn items
+      esriImagery.addTo(map);
+      L.control
+        .layers(
+          {
+            "Satellite (Esri)": esriImagery,
+            OpenStreetMap: osmStreets,
+          },
+          undefined,
+          { position: "topright" }
+        )
+        .addTo(map);
+
       const drawnItems = new L.FeatureGroup();
-      newMap.addLayer(drawnItems);
+      map.addLayer(drawnItems);
 
-      // Save feature group to both state and ref
-      setFeatureGroup(drawnItems);
+      mapRef.current = map;
       featureGroupRef.current = drawnItems;
+    }
 
-      // Configure draw control options
-      const drawControlOptions = {
+    mapRef.current.setView([coordinates.lat, coordinates.lng], 20);
+
+    if (locationMarkerRef.current) {
+      mapRef.current.removeLayer(locationMarkerRef.current);
+    }
+
+    const locationMarker = L.circleMarker([coordinates.lat, coordinates.lng], {
+      radius: 6,
+      color: "#00d3a7",
+      fillColor: "#00d3a7",
+      fillOpacity: 0.8,
+    });
+
+    locationMarker
+      .bindTooltip("Selected address", {
+        direction: "top",
+      })
+      .addTo(mapRef.current);
+
+    locationMarkerRef.current = locationMarker;
+
+    setTimeout(() => mapRef.current?.invalidateSize(), 100);
+  }, [coordinates]);
+
+  const syncDrawTools = useCallback(() => {
+    if (!mapRef.current || !featureGroupRef.current) {
+      return;
+    }
+
+    const map = mapRef.current;
+
+    if (showMapTools && !drawControlRef.current) {
+      const drawControl = new (L.Control as any).Draw({
         position: "topright",
         draw: {
           polyline: true,
@@ -173,118 +240,96 @@ export default function App() {
           circlemarker: false,
         },
         edit: {
-          featureGroup: drawnItems,
+          featureGroup: featureGroupRef.current,
           remove: true,
         },
-      };
+      });
 
-      // Add draw control to map
-      const control = new L.Control.Draw(drawControlOptions);
-      newMap.addControl(control);
-      setDrawControl(control);
-
-      // Set up event handlers for drawing
-      newMap.on(L.Draw.Event.CREATED, handleDrawCreated);
-      newMap.on(L.Draw.Event.EDITED, handleDrawEdited);
-      newMap.on(L.Draw.Event.DELETED, handleDrawDeleted);
-
-      setMap(newMap);
+      map.addControl(drawControl);
+      map.on((L as any).Draw.Event.CREATED, handleDrawCreated);
+      map.on((L as any).Draw.Event.EDITED, handleDrawEdited);
+      map.on((L as any).Draw.Event.DELETED, handleDrawDeleted);
+      drawControlRef.current = drawControl;
+      return;
     }
-  };
 
-  // Handle created shapes in Leaflet
-  const handleDrawCreated = (e) => {
-    const { layerType, layer } = e;
+    if (!showMapTools && drawControlRef.current) {
+      map.removeControl(drawControlRef.current);
+      map.off((L as any).Draw.Event.CREATED, handleDrawCreated);
+      map.off((L as any).Draw.Event.EDITED, handleDrawEdited);
+      map.off((L as any).Draw.Event.DELETED, handleDrawDeleted);
+      drawControlRef.current = null;
+    }
+  }, [handleDrawCreated, handleDrawDeleted, handleDrawEdited, showMapTools]);
 
-    // Use the feature group ref to ensure we have access to it
-    if (featureGroupRef.current) {
-      featureGroupRef.current.addLayer(layer);
+  useEffect(() => {
+    setupMapIfNeeded();
+  }, [setupMapIfNeeded]);
 
-      if (layerType === "marker") {
-        const position = layer.getLatLng();
-        const newObstacle = {
-          id: Date.now(),
-          layerId: featureGroupRef.current.getLayerId(layer),
-          type: "obstacle",
-          position: [position.lat, position.lng],
-          label: "Obstacle",
-        };
-        setObstacleMarkers((prevMarkers) => [...prevMarkers, newObstacle]);
-      } else {
-        // For polygons, rectangles, circles, polylines
-        const geoJSON = layer.toGeoJSON();
-        const newElement = {
-          id: Date.now(),
-          layerId: featureGroupRef.current.getLayerId(layer),
-          type: layerType,
-          geoJSON: geoJSON,
-          style: {
-            color:
-              layerType === "polygon" || layerType === "rectangle"
-                ? "#3388ff"
-                : layerType === "circle"
-                ? "#33cc33"
-                : "#ff3333",
+  useEffect(() => {
+    syncDrawTools();
+  }, [syncDrawTools]);
+
+  useEffect(() => {
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+      }
+    };
+  }, []);
+
+  const searchAddress = async () => {
+    const query = address.trim();
+    if (!query) {
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&q=${encodeURIComponent(
+          query
+        )}`,
+        {
+          headers: {
+            Accept: "application/json",
           },
-        };
-        setRoofElements((prevElements) => [...prevElements, newElement]);
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to search address");
       }
+
+      const data = (await response.json()) as NominatimResult[];
+      setSearchResults(data);
+
+      if (data.length === 1) {
+        const [singleResult] = data;
+        selectAddress(singleResult);
+      }
+    } catch (error) {
+      console.error("Address search failed", error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
     }
   };
 
-  // Handle edited shapes
-  const handleDrawEdited = (e) => {
-    if (!featureGroupRef.current) return;
+  const selectAddress = (result: NominatimResult) => {
+    const lat = Number(result.lat);
+    const lng = Number(result.lon);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      return;
+    }
 
-    const layers = e.layers;
-    layers.eachLayer((layer) => {
-      const id = featureGroupRef.current.getLayerId(layer);
-
-      // Check if it's a marker (obstacle)
-      if (layer instanceof L.Marker) {
-        const position = layer.getLatLng();
-        setObstacleMarkers((prevMarkers) =>
-          prevMarkers.map((obstacle) =>
-            obstacle.layerId === id
-              ? { ...obstacle, position: [position.lat, position.lng] }
-              : obstacle
-          )
-        );
-      } else {
-        // It's a roof element (polygon, rectangle, etc.)
-        const geoJSON = layer.toGeoJSON();
-        setRoofElements((prevElements) =>
-          prevElements.map((element) =>
-            element.layerId === id ? { ...element, geoJSON: geoJSON } : element
-          )
-        );
-      }
-    });
+    setAddress(result.display_name);
+    setSelectedAddress(result.display_name);
+    setCoordinates({ lat, lng });
+    setSearchResults([]);
   };
 
-  // Handle deleted shapes
-  const handleDrawDeleted = (e) => {
-    if (!featureGroupRef.current) return;
-
-    const layers = e.layers;
-    layers.eachLayer((layer) => {
-      const id = featureGroupRef.current.getLayerId(layer);
-
-      // Remove from obstacles if it's a marker
-      if (layer instanceof L.Marker) {
-        setObstacleMarkers((prevMarkers) =>
-          prevMarkers.filter((obstacle) => obstacle.layerId !== id)
-        );
-      } else {
-        // Remove from roof elements
-        setRoofElements((prevElements) =>
-          prevElements.filter((element) => element.layerId !== id)
-        );
-      }
-    });
-  };
-
-  // Export roof data as GeoJSON
   const exportRoofData = () => {
     const data = {
       type: "FeatureCollection",
@@ -292,7 +337,7 @@ export default function App() {
         ...roofElements.map((element) => ({
           ...element.geoJSON,
           properties: {
-            ...element.geoJSON.properties,
+            ...(element.geoJSON.properties ?? {}),
             elementType: element.type,
             style: element.style,
           },
@@ -304,7 +349,7 @@ export default function App() {
             coordinates: [marker.position[1], marker.position[0]],
           },
           properties: {
-            type: "obstacle",
+            type: marker.type,
             label: marker.label,
           },
         })),
@@ -313,7 +358,7 @@ export default function App() {
 
     const dataStr =
       "data:text/json;charset=utf-8," +
-      encodeURIComponent(JSON.stringify(data));
+      encodeURIComponent(JSON.stringify(data, null, 2));
     const downloadAnchorNode = document.createElement("a");
     downloadAnchorNode.setAttribute("href", dataStr);
     downloadAnchorNode.setAttribute("download", "roof_data.geojson");
@@ -321,15 +366,6 @@ export default function App() {
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
   };
-
-  // Clean up map on component unmount
-  useEffect(() => {
-    return () => {
-      if (map) {
-        map.remove();
-      }
-    };
-  }, [map]);
 
   return (
     <div
@@ -340,11 +376,10 @@ export default function App() {
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
       }}
     >
-      {/* Sidebar */}
       <div
         className="sidebar"
         style={{
-          width: "320px",
+          width: "340px",
           backgroundColor: "#383c4a",
           color: "#fff",
           padding: "20px",
@@ -353,16 +388,14 @@ export default function App() {
         }}
       >
         <div style={{ marginBottom: "25px", textAlign: "center" }}>
-          <h1 style={{ margin: "0 0 5px 0", color: "#5294e2" }}>
-            Roof Capture
-          </h1>
+          <h1 style={{ margin: "0 0 5px 0", color: "#5294e2" }}>Roof Capture</h1>
           <p style={{ color: "#7c818c", fontSize: "14px", margin: "0" }}>
-            Trace and analyze building rooftops
+            Free map stack: OpenStreetMap + open imagery
           </p>
         </div>
 
-        <div className="sidebar-section" style={{ marginBottom: "25px" }}>
-          <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>Location</h3>
+        <div className="sidebar-section" style={{ marginBottom: "20px" }}>
+          <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>Location Search</h3>
           <label
             htmlFor="address"
             style={{
@@ -372,267 +405,193 @@ export default function App() {
               color: "#7c818c",
             }}
           >
-            Search Address
+            Address
           </label>
-          <input
-            ref={inputRef}
-            type="text"
-            id="address"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Enter an address..."
-            style={{
-              width: "100%",
-              padding: "10px",
-              border: "none",
-              borderRadius: "4px",
-              backgroundColor: "#404552",
-              color: "#fff",
-              marginBottom: "10px",
-            }}
-          />
+          <div style={{ display: "flex", gap: "8px" }}>
+            <input
+              type="text"
+              id="address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  searchAddress();
+                }
+              }}
+              placeholder="Search with OpenStreetMap geocoder"
+              style={{
+                width: "100%",
+                padding: "10px",
+                border: "none",
+                borderRadius: "4px",
+                backgroundColor: "#404552",
+                color: "#fff",
+              }}
+            />
+            <button
+              onClick={searchAddress}
+              disabled={isSearching}
+              style={{
+                padding: "10px 14px",
+                backgroundColor: "#5294e2",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: isSearching ? "not-allowed" : "pointer",
+                opacity: isSearching ? 0.7 : 1,
+              }}
+            >
+              {isSearching ? "..." : "Find"}
+            </button>
+          </div>
+          {searchResults.length > 0 && (
+            <div
+              style={{
+                marginTop: "10px",
+                borderRadius: "6px",
+                overflow: "hidden",
+                border: "1px solid #4b5162",
+              }}
+            >
+              {searchResults.map((result) => (
+                <button
+                  key={`${result.lat}-${result.lon}-${result.display_name}`}
+                  onClick={() => selectAddress(result)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px",
+                    border: "none",
+                    borderBottom: "1px solid #4b5162",
+                    backgroundColor: "#404552",
+                    color: "#dcdfe4",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                  }}
+                >
+                  {result.display_name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {selectedAddress && (
-          <div className="sidebar-section" style={{ marginBottom: "25px" }}>
-            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>
-              Selected Location
-            </h3>
+        {selectedAddress && coordinates && (
+          <div className="sidebar-section" style={{ marginBottom: "20px" }}>
+            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>Selected Location</h3>
             <div
               style={{
                 backgroundColor: "#4b5162",
-                padding: "10px",
+                padding: "12px",
                 borderRadius: "4px",
                 fontSize: "14px",
               }}
             >
-              <p style={{ margin: "0" }}>{selectedAddress}</p>
-              {coordinates && (
-                <p
-                  style={{
-                    margin: "5px 0 0 0",
-                    fontSize: "12px",
-                    color: "#7c818c",
-                  }}
-                >
-                  {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
-                </p>
-              )}
+              <p style={{ margin: "0 0 6px 0" }}>{selectedAddress}</p>
+              <p style={{ margin: 0, color: "#9da3b3", fontSize: "12px" }}>
+                {coordinates.lat.toFixed(6)}, {coordinates.lng.toFixed(6)}
+              </p>
             </div>
           </div>
         )}
 
-        {coordinates && !showMap && (
-          <div className="sidebar-section" style={{ marginBottom: "25px" }}>
-            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>
-              Image Settings
-            </h3>
-            <label
-              htmlFor="zoom"
-              style={{
-                display: "block",
-                marginBottom: "8px",
-                fontSize: "14px",
-                color: "#7c818c",
-              }}
-            >
-              Zoom Level: {zoomLevel}
-            </label>
-            <input
-              type="range"
-              id="zoom"
-              min="18"
-              max="22"
-              value={zoomLevel}
-              onChange={(e) => handleZoomChange(parseInt(e.target.value))}
-              style={{ width: "100%" }}
-            />
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "12px",
-                color: "#7c818c",
-              }}
-            >
-              <span>Wide</span>
-              <span>Detailed</span>
-            </div>
-          </div>
-        )}
-
-        {coordinates && !showMap && (
-          <div className="sidebar-section" style={{ marginBottom: "25px" }}>
+        {coordinates && (
+          <div className="sidebar-section" style={{ marginBottom: "20px" }}>
             <button
-              onClick={showLeafletMap}
+              onClick={() => setShowMapTools((prev) => !prev)}
               style={{
                 width: "100%",
                 padding: "12px",
-                backgroundColor: "#5294e2",
+                backgroundColor: showMapTools ? "#4b5162" : "#5294e2",
                 color: "white",
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer",
                 fontWeight: "bold",
-                transition: "background-color 0.2s",
               }}
-              onMouseOver={(e) => (e.target.style.backgroundColor = "#4a85cb")}
-              onMouseOut={(e) => (e.target.style.backgroundColor = "#5294e2")}
             >
-              Trace Roof Layout
+              {showMapTools ? "Disable Draw Tools" : "Enable Roof Tracing"}
             </button>
           </div>
         )}
 
-        {showMap && (
-          <div className="sidebar-section" style={{ marginBottom: "25px" }}>
-            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>
-              Drawing Tools
-            </h3>
+        {showMapTools && (
+          <div className="sidebar-section" style={{ marginBottom: "20px" }}>
+            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>Drawing Tools</h3>
             <div
               style={{
                 backgroundColor: "#4b5162",
-                padding: "15px",
+                padding: "12px",
                 borderRadius: "4px",
                 fontSize: "14px",
               }}
             >
-              <p style={{ margin: "0 0 10px 0", fontWeight: "bold" }}>
-                Instructions:
-              </p>
-              <ul
-                style={{ margin: "0", paddingLeft: "20px", color: "#dcdfe4" }}
-              >
-                <li style={{ marginBottom: "8px" }}>
-                  Use <span style={{ color: "#5294e2" }}>Polygon</span> or{" "}
-                  <span style={{ color: "#5294e2" }}>Rectangle</span> tool to
-                  trace the roof outline
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Use <span style={{ color: "#5294e2" }}>Circle</span> tool for
-                  circular features
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Use <span style={{ color: "#5294e2" }}>Polyline</span> for
-                  edges or lines
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Use <span style={{ color: "#5294e2" }}>Marker</span> for
-                  obstacles
-                </li>
-                <li style={{ marginBottom: "8px" }}>
-                  Use <span style={{ color: "#5294e2" }}>Edit</span> tools to
-                  modify shapes
-                </li>
+              <p style={{ margin: "0 0 8px 0", fontWeight: "bold" }}>Instructions:</p>
+              <ul style={{ margin: 0, paddingLeft: "20px", color: "#dcdfe4" }}>
+                <li style={{ marginBottom: "7px" }}>Polygon/Rectangle for roof outlines</li>
+                <li style={{ marginBottom: "7px" }}>Circle for circular roof features</li>
+                <li style={{ marginBottom: "7px" }}>Polyline for edges and ridges</li>
+                <li style={{ marginBottom: "7px" }}>Marker for rooftop obstacles</li>
               </ul>
             </div>
           </div>
         )}
 
-        {showMap && (
-          <div className="sidebar-section" style={{ marginBottom: "25px" }}>
-            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>
-              Element Summary
-            </h3>
+        {showMapTools && (
+          <div className="sidebar-section" style={{ marginBottom: "20px" }}>
+            <h3 style={{ color: "#5294e2", marginBottom: "10px" }}>Element Summary</h3>
             <div
               style={{
                 backgroundColor: "#4b5162",
-                padding: "15px",
+                padding: "12px",
                 borderRadius: "4px",
               }}
             >
-              <div style={{ marginBottom: "12px" }}>
-                <p style={{ margin: "0 0 5px 0", fontWeight: "bold" }}>
-                  Roof Elements: {roofElements.length}
-                </p>
-                <ul
-                  style={{
-                    margin: "0",
-                    paddingLeft: "20px",
-                    color: "#dcdfe4",
-                    fontSize: "14px",
-                  }}
-                >
-                  <li>
-                    Polygons/Rectangles:{" "}
-                    {
-                      roofElements.filter(
-                        (el) => el.type === "polygon" || el.type === "rectangle"
-                      ).length
-                    }
-                  </li>
-                  <li>
-                    Circles:{" "}
-                    {roofElements.filter((el) => el.type === "circle").length}
-                  </li>
-                  <li>
-                    Lines:{" "}
-                    {roofElements.filter((el) => el.type === "polyline").length}
-                  </li>
-                </ul>
-              </div>
-              <div>
-                <p style={{ margin: "0 0 5px 0", fontWeight: "bold" }}>
-                  Obstacles: {obstacleMarkers.length}
-                </p>
-              </div>
+              <p style={{ margin: "0 0 6px 0", fontWeight: "bold" }}>
+                Roof Elements: {roofElements.length}
+              </p>
+              <ul style={{ margin: "0 0 8px 0", paddingLeft: "20px", fontSize: "14px" }}>
+                <li>
+                  Polygons/Rectangles:{" "}
+                  {
+                    roofElements.filter(
+                      (el) => el.type === "polygon" || el.type === "rectangle"
+                    ).length
+                  }
+                </li>
+                <li>Circles: {roofElements.filter((el) => el.type === "circle").length}</li>
+                <li>Lines: {roofElements.filter((el) => el.type === "polyline").length}</li>
+              </ul>
+              <p style={{ margin: 0, fontWeight: "bold" }}>
+                Obstacles: {obstacleMarkers.length}
+              </p>
             </div>
           </div>
         )}
 
-        {showMap && (
-          <div className="sidebar-section">
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                onClick={() => setShowMap(false)}
-                style={{
-                  flex: "1",
-                  padding: "10px",
-                  backgroundColor: "#4b5162",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  transition: "background-color 0.2s",
-                }}
-                onMouseOver={(e) =>
-                  (e.target.style.backgroundColor = "#565d72")
-                }
-                onMouseOut={(e) => (e.target.style.backgroundColor = "#4b5162")}
-              >
-                Back to Image
-              </button>
-              <button
-                onClick={exportRoofData}
-                style={{
-                  flex: "1",
-                  padding: "10px",
-                  backgroundColor: "#5294e2",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  transition: "background-color 0.2s",
-                }}
-                onMouseOver={(e) =>
-                  (e.target.style.backgroundColor = "#4a85cb")
-                }
-                onMouseOut={(e) => (e.target.style.backgroundColor = "#5294e2")}
-              >
-                Export Data
-              </button>
-            </div>
-          </div>
+        {showMapTools && (
+          <button
+            onClick={exportRoofData}
+            style={{
+              width: "100%",
+              padding: "12px",
+              backgroundColor: "#5294e2",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            Export Data (GeoJSON)
+          </button>
         )}
       </div>
 
-      {/* Main Content Area */}
       <div
         className="main-content"
         style={{
-          flex: "1",
+          flex: 1,
           backgroundColor: "#404552",
           padding: "20px",
           overflow: "hidden",
@@ -649,50 +608,23 @@ export default function App() {
               justifyContent: "center",
               alignItems: "center",
               color: "#7c818c",
-            }}
-          >
-            <div style={{ textAlign: "center", maxWidth: "500px" }}>
-              <svg
-                width="100"
-                height="100"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#5294e2"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ marginBottom: "20px" }}
-              >
-                <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" />
-              </svg>
-              <h2 style={{ color: "#5294e2", marginBottom: "15px" }}>
-                Welcome to the Roof Capture Tool
-              </h2>
-              <p style={{ lineHeight: "1.6" }}>
-                Start by searching for an address in the sidebar. Once you've
-                selected a location, you'll be able to view a satellite image
-                and trace the building roof layout.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {isLoading && (
-          <div
-            style={{
               textAlign: "center",
-              padding: "30px",
-              flex: 1,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
+              maxWidth: "560px",
+              margin: "0 auto",
             }}
           >
-            <p style={{ color: "#fff" }}>Processing image...</p>
+            <h2 style={{ color: "#5294e2", marginBottom: "14px" }}>
+              Open-Source Map Ready
+            </h2>
+            <p style={{ lineHeight: 1.6 }}>
+              Search an address with the OpenStreetMap geocoder. Once selected,
+              the map centers there with high-quality imagery and optional roof
+              tracing tools.
+            </p>
           </div>
         )}
 
-        {imageUrl && !isLoading && !showMap && (
+        {coordinates && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
             <div
               style={{
@@ -705,52 +637,12 @@ export default function App() {
                 alignItems: "center",
               }}
             >
-              <h2 style={{ margin: "0", color: "#5294e2" }}>Satellite View</h2>
-              <p style={{ margin: "0", color: "#7c818c", fontSize: "14px" }}>
-                Use the slider in the sidebar to adjust zoom level
+              <h2 style={{ margin: 0, color: "#5294e2" }}>Map View</h2>
+              <p style={{ margin: 0, color: "#9da3b3", fontSize: "14px" }}>
+                Use the layer switcher (top-right) to swap imagery and OSM.
               </p>
             </div>
-            <div
-              style={{
-                flex: 1,
-                border: "2px solid #4b5162",
-                borderRadius: "8px",
-                overflow: "hidden",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                backgroundColor: "#383c4a",
-              }}
-            >
-              <img
-                ref={imageRef}
-                src={imageUrl}
-                alt="Satellite Image"
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  objectFit: "contain",
-                }}
-              />
-            </div>
-          </div>
-        )}
 
-        {/* Leaflet Map Container */}
-        {showMap && coordinates && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <div
-              style={{
-                backgroundColor: "#383c4a",
-                padding: "15px",
-                borderRadius: "8px",
-                marginBottom: "15px",
-              }}
-            >
-              <h2 style={{ margin: "0", color: "#5294e2" }}>
-                Roof Layout Tracer
-              </h2>
-            </div>
             <div
               style={{
                 flex: 1,
