@@ -6,11 +6,69 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-draw";
 import "leaflet-draw/dist/leaflet.draw.css";
 import { Map } from "@/components/ui/map";
+import { X, Search, Map as MapIcon, Layers, Monitor, MapPin, Download, Menu, Hexagon, Circle, Square, Minus } from "lucide-react";
 
 type Coordinates = { lat: number; lng: number };
 type NominatimResult = { display_name: string; lat: string; lon: string };
 type RoofElement = { id: number; layerId: number; type: string; geoJSON: GeoJSON.Feature; style: { color: string } };
 type ObstacleMarker = { id: number; layerId: number; type: "obstacle"; position: [number, number]; label: string };
+
+function cn(...classes: string[]) {
+  return classes.filter(Boolean).join(" ");
+}
+
+/* 🧱 Reusable UI Components */
+
+const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  <div
+    className={cn(
+      "bg-white/[0.03] border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 hover:scale-[1.01] hover:bg-white/[0.05] relative overflow-hidden group",
+      className || ""
+    )}
+  >
+    {/* Subtle gradient light overlay on hover */}
+    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+    <div className="relative z-10 h-full">{children}</div>
+  </div>
+);
+
+const Button = ({
+  children,
+  className,
+  variant = "primary",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "outline" }) => {
+  const variants = {
+    primary:
+      "bg-white/10 hover:bg-white/20 text-white border border-white/10 shadow-lg shadow-white/5 focus:ring-2 focus:ring-white/20",
+    ghost: "text-zinc-400 hover:text-white hover:bg-white/5",
+    outline: "border border-white/10 text-zinc-300 hover:bg-white/10 hover:text-white",
+  };
+  return (
+    <button
+      className={cn(
+        "px-5 py-2.5 rounded-2xl transition-all duration-300 ease-out active:scale-[0.98] outline-none tracking-widest text-[11px] font-semibold flex items-center justify-center gap-2 uppercase whitespace-nowrap disabled:opacity-50 disabled:pointer-events-none",
+        variants[variant],
+        className || ""
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+const Input = ({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
+  <input
+    className={cn(
+      "w-full bg-black/40 border border-white/10 rounded-2xl py-3 px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-white/20 transition-all font-light tracking-wide backdrop-blur-sm",
+      className || ""
+    )}
+    {...props}
+  />
+);
+
+/* ⚛️ Main Application */
 
 export default function App() {
   const [address, setAddress] = useState("");
@@ -18,7 +76,8 @@ export default function App() {
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
   const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
   const [showMapTools, setShowMapTools] = useState(false);
@@ -30,13 +89,23 @@ export default function App() {
   const drawControlRef = useRef<L.Control | null>(null);
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
 
+  /* 🗺️ Map Logic */
   const handleDrawCreated = useCallback((e: any) => {
     const { layerType, layer } = e;
     if (!featureGroupRef.current) return;
     featureGroupRef.current.addLayer(layer);
     if (layerType === "marker") {
       const position = (layer as L.Marker).getLatLng();
-      setObstacleMarkers(prev => [...prev, { id: Date.now(), layerId: featureGroupRef.current!.getLayerId(layer), type: "obstacle", position: [position.lat, position.lng], label: "Obstacle" }]);
+      setObstacleMarkers((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          layerId: featureGroupRef.current!.getLayerId(layer),
+          type: "obstacle",
+          position: [position.lat, position.lng],
+          label: "Obstacle",
+        },
+      ]);
       return;
     }
     const newElement: RoofElement = {
@@ -44,9 +113,11 @@ export default function App() {
       layerId: featureGroupRef.current.getLayerId(layer),
       type: layerType,
       geoJSON: layer.toGeoJSON() as GeoJSON.Feature,
-      style: { color: layerType === "polygon" || layerType === "rectangle" ? "#ffffff" : layerType === "circle" ? "#e5e5e5" : "#a3a3a3" },
+      style: {
+        color: layerType === "polygon" || layerType === "rectangle" ? "#ffffff" : layerType === "circle" ? "#e5e5e5" : "#a3a3a3",
+      },
     };
-    setRoofElements(prev => [...prev, newElement]);
+    setRoofElements((prev) => [...prev, newElement]);
   }, []);
 
   const handleDrawEdited = useCallback((e: any) => {
@@ -55,10 +126,14 @@ export default function App() {
       const id = featureGroupRef.current!.getLayerId(layer);
       if (layer instanceof L.Marker) {
         const position = layer.getLatLng();
-        setObstacleMarkers(prev => prev.map(obs => obs.layerId === id ? { ...obs, position: [position.lat, position.lng] } : obs));
+        setObstacleMarkers((prev) =>
+          prev.map((obs) => (obs.layerId === id ? { ...obs, position: [position.lat, position.lng] } : obs))
+        );
         return;
       }
-      setRoofElements(prev => prev.map(el => el.layerId === id ? { ...el, geoJSON: (layer as any).toGeoJSON() as GeoJSON.Feature } : el));
+      setRoofElements((prev) =>
+        prev.map((el) => (el.layerId === id ? { ...el, geoJSON: (layer as any).toGeoJSON() as GeoJSON.Feature } : el))
+      );
     });
   }, []);
 
@@ -67,10 +142,10 @@ export default function App() {
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
       if (layer instanceof L.Marker) {
-        setObstacleMarkers(prev => prev.filter(obs => obs.layerId !== id));
+        setObstacleMarkers((prev) => prev.filter((obs) => obs.layerId !== id));
         return;
       }
-      setRoofElements(prev => prev.filter(el => el.layerId !== id));
+      setRoofElements((prev) => prev.filter((el) => el.layerId !== id));
     });
   }, []);
 
@@ -83,12 +158,17 @@ export default function App() {
         iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
         shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
       });
-      const map = L.map(mapContainerRef.current, { zoomControl: true, attributionControl: false }).setView([coordinates.lat, coordinates.lng], 19);
-      
-      // Only using Satellite view in Leaflet now.
-      const esriImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21 });
+      const map = L.map(mapContainerRef.current, { zoomControl: true, attributionControl: false }).setView(
+        [coordinates.lat, coordinates.lng],
+        19
+      );
+
+      const esriImagery = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 21 }
+      );
       esriImagery.addTo(map);
-      
+
       const drawnItems = new L.FeatureGroup();
       map.addLayer(drawnItems);
       mapRef.current = map;
@@ -96,12 +176,17 @@ export default function App() {
     }
     mapRef.current.setView([coordinates.lat, coordinates.lng], 19);
     if (locationMarkerRef.current) mapRef.current.removeLayer(locationMarkerRef.current);
-    
-    // Monochrome aesthetic marker
-    const locationMarker = L.circleMarker([coordinates.lat, coordinates.lng], { radius: 8, color: "#ffffff", fillColor: "#ffffff", fillOpacity: 0.9, weight: 2 });
+
+    const locationMarker = L.circleMarker([coordinates.lat, coordinates.lng], {
+      radius: 8,
+      color: "#ffffff",
+      fillColor: "#ffffff",
+      fillOpacity: 0.9,
+      weight: 2,
+    });
     locationMarker.bindTooltip("Center", { direction: "top", className: "monochrome-tooltip" }).addTo(mapRef.current);
     locationMarkerRef.current = locationMarker;
-    
+
     setTimeout(() => mapRef.current?.invalidateSize(), 300);
   }, [coordinates]);
 
@@ -128,25 +213,36 @@ export default function App() {
     }
   }, [handleDrawCreated, handleDrawDeleted, handleDrawEdited, showMapTools]);
 
-  // Handle map resizing when switching views
   useEffect(() => {
-    if (viewMode === "satellite" && mapRef.current) {
-      setTimeout(() => mapRef.current?.invalidateSize(), 100);
-    }
+    if (viewMode === "satellite" && mapRef.current) setTimeout(() => mapRef.current?.invalidateSize(), 100);
   }, [viewMode]);
 
-  useEffect(() => { setupMapIfNeeded(); }, [setupMapIfNeeded]);
-  useEffect(() => { syncDrawTools(); }, [syncDrawTools]);
+  useEffect(() => {
+    setupMapIfNeeded();
+  }, [setupMapIfNeeded]);
   
-  useEffect(() => { return () => { if (mapRef.current) mapRef.current.remove(); }; }, []);
+  useEffect(() => {
+    syncDrawTools();
+  }, [syncDrawTools]);
 
+  useEffect(() => {
+    return () => {
+      if (mapRef.current) mapRef.current.remove();
+    };
+  }, []);
+
+  /* 🔍 Search Logic */
   const searchAddress = async () => {
     const query = address.trim();
     if (!query) return;
     setIsSearching(true);
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`);
-      const data = await response.json() as NominatimResult[];
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(
+          query
+        )}`
+      );
+      const data = (await response.json()) as NominatimResult[];
       setSearchResults(data);
       if (data.length === 1) selectAddress(data[0]);
     } catch (error) {
@@ -164,7 +260,8 @@ export default function App() {
       setSelectedAddress(result.display_name);
       setCoordinates({ lat, lng });
       setSearchResults([]);
-      setViewMode("normal"); // Default to normal view after searching
+      setViewMode("normal");
+      setMobileMenuOpen(false);
     }
   };
 
@@ -172,8 +269,15 @@ export default function App() {
     const data = {
       type: "FeatureCollection",
       features: [
-        ...roofElements.map(el => ({ ...el.geoJSON, properties: { ...(el.geoJSON.properties ?? {}), elementType: el.type, style: el.style } })),
-        ...obstacleMarkers.map(m => ({ type: "Feature", geometry: { type: "Point", coordinates: [m.position[1], m.position[0]] }, properties: { type: m.type, label: m.label } })),
+        ...roofElements.map((el) => ({
+          ...el.geoJSON,
+          properties: { ...(el.geoJSON.properties ?? {}), elementType: el.type, style: el.style },
+        })),
+        ...obstacleMarkers.map((m) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [m.position[1], m.position[0]] },
+          properties: { type: m.type, label: m.label },
+        })),
       ],
     };
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
@@ -186,245 +290,302 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] font-sans text-neutral-100 overflow-hidden relative selection:bg-white/30 selection:text-white">
-      {/* Absolute grid pattern for aesthetic */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
-      
-      {/* Sidebar - Monochrome Glass */}
-      <div className="w-[360px] flex-shrink-0 bg-black/60 backdrop-blur-2xl border-r border-white/10 p-7 flex flex-col gap-8 overflow-y-auto z-20 shadow-2xl relative">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.02] rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="animate-fade-in-down mb-4 border-b border-white/10 pb-6 pointer-events-auto">
-          <h1 className="text-xl font-semibold text-white tracking-widest uppercase flex items-center gap-3">
-            <span className="w-4 h-4 bg-white rounded-sm rotate-45 inline-block"></span>
-            SolarRoof
-          </h1>
-          <p className="text-[11px] text-neutral-500 font-medium tracking-widest mt-2 uppercase">
-            Monochrome Workspace
-          </p>
-        </div>
+    <div className="flex h-screen bg-[#050505] font-sans text-zinc-100 overflow-hidden relative selection:bg-white/20 selection:text-white">
+      {/* Background Ambience */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.05)_0%,transparent_50%)] pointer-events-none z-0" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none z-0 mix-blend-overlay" />
 
-        {/* Search */}
-        <div className="animate-fade-in-up flex flex-col gap-6 pointer-events-auto z-10">
-          <div className="flex flex-col gap-3">
-            <div className="relative group">
-              <input
-                type="text"
+      {/* 📱 Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[100] md:hidden flex justify-end"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="w-4/5 max-w-sm h-full bg-[#0a0a0a] border-l border-white/10 p-6 flex flex-col gap-6 transform transition-transform"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h1 className="text-xl font-medium tracking-[0.2em] uppercase text-white">SolarRoof</h1>
+              <Button variant="ghost" className="!p-2" onClick={() => setMobileMenuOpen(false)}>
+                <X size={20} />
+              </Button>
+            </div>
+            {/* Mobile Search Content (mirrors sidebar) */}
+            <div className="flex flex-col gap-4">
+              <Input
+                placeholder="Search precise location..."
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") searchAddress(); }}
-                placeholder="Search precise location..."
-                className="w-full bg-neutral-900/50 border border-white/10 rounded-none py-3.5 px-4 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-white/50 focus:border-white/30 transition-all font-light tracking-wide"
+                onKeyDown={(e) => e.key === "Enter" && searchAddress()}
               />
+              <Button onClick={searchAddress} disabled={isSearching} className="w-full">
+                {isSearching ? "Locating..." : "Find Origin"}
+              </Button>
             </div>
-            <button
-              onClick={searchAddress}
-              disabled={isSearching}
-              className="w-full bg-white hover:bg-neutral-200 text-black font-medium py-3.5 px-4 rounded-none shadow-[0_4px_20px_rgba(255,255,255,0.15)] active:scale-[0.99] transition-all disabled:opacity-50 tracking-wide flex justify-center items-center gap-2 uppercase text-xs"
-            >
-              {isSearching ? "Locating..." : "Find Origin"}
-            </button>
           </div>
-          
-          {searchResults.length > 0 && (
-            <div className="bg-neutral-900/80 border border-white/10 shadow-xl overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
+        </div>
+      )}
+
+      {/* 🧭 Sidebar (Desktop) */}
+      <aside className="hidden md:flex flex-col w-[340px] border-r border-white/10 bg-black/40 backdrop-blur-2xl z-20 relative p-6 gap-8 shadow-2xl">
+        {/* Glow */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.02] rounded-full blur-[80px] pointer-events-none" />
+
+        {/* Brand */}
+        <header className="border-b border-white/10 pb-6 shrink-0">
+          <h1 className="text-xl font-medium text-white tracking-[0.15em] uppercase flex items-center gap-4">
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 border border-white/20">
+              <Hexagon size={16} className="text-white" />
+            </div>
+            SolarRoof<span className="text-zinc-500 text-sm">.ai</span>
+          </h1>
+          <p className="text-[10px] text-zinc-500 font-medium tracking-[0.15em] mt-3 uppercase">
+            Monochrome Workspace
+          </p>
+        </header>
+
+        {/* Search Block */}
+        <div className="flex flex-col gap-5 shrink-0">
+          <div className="space-y-3">
+            <Input
+              placeholder="Search precise location..."
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && searchAddress()}
+            />
+            <Button onClick={searchAddress} disabled={isSearching} className="w-full h-12">
+              {isSearching ? "Locating..." : "Find Origin"}
+            </Button>
+          </div>
+
+          {/* Results Dropdown */}
+          <div
+            className={cn(
+              "flex flex-col overflow-hidden transition-all duration-300 bg-white/5 border border-white/10 rounded-2xl",
+              searchResults.length > 0 ? "max-h-64 opacity-100 mt-2" : "max-h-0 opacity-0 border-transparent"
+            )}
+          >
+            <div className="overflow-y-auto custom-scrollbar">
               {searchResults.map((result, i) => (
                 <button
                   key={i}
                   onClick={() => selectAddress(result)}
-                  className="w-full text-left px-4 py-3.5 text-[11px] text-neutral-400 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5 last:border-0 truncate font-light tracking-wider uppercase"
+                  className="w-full text-left px-4 py-3 text-[11px] text-zinc-400 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5 last:border-0 truncate font-light tracking-wider uppercase"
                 >
                   {result.display_name}
                 </button>
               ))}
             </div>
-          )}
+          </div>
         </div>
 
+        {/* Details Block */}
         {selectedAddress && coordinates && (
-          <div className="animate-fade-in-up flex flex-col gap-6 border-t border-white/10 pt-6 z-10 pointer-events-auto">
-            
-            {/* View Mode Toggle */}
-            <div className="flex bg-neutral-900/50 p-1 border border-white/10 rounded-sm">
-              <button
-                onClick={() => setViewMode("normal")}
-                className={`flex-1 py-2 text-xs uppercase tracking-widest font-medium transition-all ${viewMode === 'normal' ? 'bg-white text-black shadow-sm' : 'text-neutral-500 hover:text-white'}`}
-              >
-                Normal
-              </button>
-              <button
-                onClick={() => setViewMode("satellite")}
-                className={`flex-1 py-2 text-xs uppercase tracking-widest font-medium transition-all ${viewMode === 'satellite' ? 'bg-white text-black shadow-sm' : 'text-neutral-500 hover:text-white'}`}
-              >
-                Satellite
-              </button>
-            </div>
-
-            <div>
-              <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full inline-block" /> Selected Region
-              </p>
-              <p className="text-sm text-neutral-200 leading-relaxed line-clamp-2 font-light">{selectedAddress}</p>
-              <div className="mt-4 inline-flex items-center gap-3 text-[10px] text-neutral-400 font-mono bg-neutral-900/80 py-1.5 px-3 border border-white/10">
-                <span className="text-white/80">LAT {coordinates.lat.toFixed(4)}</span>
+          <div className="border-t border-white/10 pt-6 flex-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+            <div className="space-y-4">
+              <h3 className="text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                <MapPin size={12} className="text-white" /> Selected Region
+              </h3>
+              <p className="text-sm text-zinc-300 leading-relaxed font-light">{selectedAddress}</p>
+              <div className="inline-flex items-center gap-3 text-[10px] text-zinc-400 font-mono bg-white/5 py-2 px-4 rounded-xl border border-white/10">
+                <span className="text-zinc-200">LAT {coordinates.lat.toFixed(4)}</span>
                 <span className="text-white/20">|</span>
-                <span className="text-white/80">LNG {coordinates.lng.toFixed(4)}</span>
+                <span className="text-zinc-200">LNG {coordinates.lng.toFixed(4)}</span>
               </div>
             </div>
 
-            <button
+            <Button
+              variant={showMapTools ? "outline" : "primary"}
               onClick={() => {
                 setShowMapTools(!showMapTools);
-                if (!showMapTools) setViewMode("satellite"); // switch to satellite when tools enabled
+                if (!showMapTools) setViewMode("satellite");
               }}
-              className={`w-full py-4 text-xs font-semibold tracking-widest uppercase border transition-all active:scale-[0.99] flex justify-center items-center gap-3 shadow-lg ${
-                showMapTools
-                  ? "bg-transparent border-white/30 text-white hover:bg-white/5"
-                  : "bg-white border-white text-black hover:bg-neutral-200"
-              }`}
+              className="w-full mt-auto h-12"
             >
-              {showMapTools ? (
-                <>Disable Workspace</>
-              ) : (
-                <>Enable Workspace</>
-              )}
+              {showMapTools ? "Disable Workspace" : "Enable Workspace"}
+            </Button>
+          </div>
+        )}
+      </aside>
+
+      {/* 🚀 Main Core */}
+      <main className="flex-1 flex flex-col min-w-0 z-10 relative">
+        {/* Header */}
+        <header className="h-20 border-b border-white/10 bg-black/20 backdrop-blur-md flex items-center justify-between px-6 lg:px-10 sticky top-0 z-50">
+          <div className="flex items-center gap-4">
+            <button className="md:hidden" onClick={() => setMobileMenuOpen(true)}>
+              <Menu size={24} className="text-white hover:text-white/80 transition-colors" />
             </button>
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-40"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+              </span>
+              <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-400">System Online</span>
+            </div>
+          </div>
 
-            {showMapTools && (
-              <div className="animate-fade-in-up border border-white/10 bg-neutral-900/30 p-5 mt-2 flex flex-col gap-5">
-                <div className="grid grid-cols-2 gap-px bg-white/10 border border-white/10">
-                  <div className="bg-neutral-950 p-4 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-light text-white">{roofElements.length}</span>
-                    <span className="text-[9px] text-neutral-500 font-medium uppercase tracking-widest mt-1">Shapes</span>
-                  </div>
-                  <div className="bg-neutral-950 p-4 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-light text-white">{obstacleMarkers.length}</span>
-                    <span className="text-[9px] text-neutral-500 font-medium uppercase tracking-widest mt-1">Markers</span>
-                  </div>
+          <div className="flex items-center gap-3 bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
+            <button
+              onClick={() => setViewMode("normal")}
+              className={cn(
+                "px-4 py-2 text-[10px] uppercase tracking-[0.15em] font-semibold rounded-xl transition-all duration-300",
+                viewMode === "normal" ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white hover:bg-white/5"
+              )}
+            >
+              Base
+            </button>
+            <button
+              onClick={() => setViewMode("satellite")}
+              className={cn(
+                "px-4 py-2 text-[10px] uppercase tracking-[0.15em] font-semibold rounded-xl transition-all duration-300",
+                viewMode === "satellite" ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white hover:bg-white/5"
+              )}
+            >
+              Imagery
+            </button>
+          </div>
+        </header>
+
+        {/* Content Area Grid */}
+        <div className="flex-1 p-6 lg:p-10 overflow-hidden flex flex-col">
+          {!coordinates ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Card className="max-w-md w-full text-center flex flex-col items-center gap-8 py-12">
+                <div className="relative flex items-center justify-center w-20 h-20 rounded-3xl bg-white/5 border border-white/10 shadow-[0_0_40px_rgba(255,255,255,0.05)]">
+                  <Search size={32} className="text-white/40" />
+                  <div className="absolute inset-0 border border-white/20 rounded-3xl animate-ping opacity-20"></div>
                 </div>
-                
-                <button
-                  onClick={exportRoofData}
-                  className="w-full bg-transparent border border-neutral-700 hover:border-white/50 text-neutral-300 font-medium tracking-widest uppercase text-[10px] py-3 transition-all flex justify-center items-center gap-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
-                  Export Data
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                <div className="space-y-3">
+                  <h2 className="text-xl font-medium text-white tracking-[0.15em] uppercase">Awaiting Input</h2>
+                  <p className="text-zinc-500 font-light text-xs tracking-widest leading-relaxed uppercase">
+                    Initialize location search to load mapping environment
+                  </p>
+                </div>
+              </Card>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col lg:flex-row gap-6 h-full min-h-0">
+              {/* Map Card */}
+              <Card className="flex-1 p-0 rounded-3xl overflow-hidden border-white/20 shadow-2xl relative">
+                <div className={`absolute inset-0 ${viewMode === "satellite" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"} transition-opacity duration-300`}>
+                  <div ref={mapContainerRef} className="w-full h-full bg-black" />
+                </div>
+                <div className={`absolute inset-0 ${viewMode === "normal" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"} transition-opacity duration-300`}>
+                  <Map center={[coordinates.lng, coordinates.lat]} zoom={18} />
+                </div>
+              </Card>
 
-      {/* Main Area */}
-      <div className="flex-1 p-6 flex flex-col relative w-full h-screen">
-        {!coordinates ? (
-          <div className="flex-1 flex items-center justify-center z-10 animate-fade-in">
-            <div className="flex flex-col items-center gap-6 max-w-sm text-center">
-              <div className="w-16 h-16 border border-white/20 bg-neutral-900/50 flex items-center justify-center rotate-45">
-                <div className="w-6 h-6 border border-white/40 -rotate-45" />
-              </div>
-              <div>
-                <h2 className="text-xl font-medium text-white tracking-[0.2em] uppercase mb-2">Awaiting Input</h2>
-                <p className="text-neutral-500 font-light text-xs tracking-widest leading-relaxed uppercase">
-                  Initialize location search to load satellite environment
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 border border-white/10 shadow-2xl relative z-10 isolate animate-fade-in bg-neutral-900">
-            {/* Minimalist Top Bar */}
-            <div className="absolute top-4 left-4 z-[500] pointer-events-none">
-              <div className="bg-black/80 backdrop-blur-md border border-white/10 py-2 px-4 shadow-xl flex items-center gap-3">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full bg-white opacity-40"></span>
-                  <span className="relative inline-flex h-2 w-2 bg-white"></span>
-                </span>
-                <span className="text-white text-[10px] font-medium uppercase tracking-widest">{viewMode.toUpperCase()} VIEW ACTIVE</span>
-              </div>
-            </div>
-            
-            {/* View container switches between Leaflet and MapCN dynamically */}
-            <div className={`w-full h-full relative ${viewMode === 'satellite' ? 'opacity-100 z-10' : 'opacity-0 z-0 hidden'} transition-opacity duration-300`}>
-               <div ref={mapContainerRef} className="w-full h-full bg-black grayscale contrast-125" />
-            </div>
+              {/* Data Panel - Shows up when tools are enabled */}
+              {showMapTools && (
+                <div className="w-full lg:w-72 flex flex-col gap-6 shrink-0 animate-fade-in-up mt-6 lg:mt-0">
+                  <Card className="flex flex-col gap-6">
+                    <h3 className="text-xs uppercase tracking-[0.2em] font-medium text-zinc-400 flex items-center gap-2 border-b border-white/10 pb-4">
+                      <Layers size={14} className="text-white" /> Intelligence
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-colors">
+                        <span className="text-3xl font-light text-white">{roofElements.length}</span>
+                        <span className="text-[9px] text-zinc-500 uppercase tracking-widest">Shapes</span>
+                      </div>
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-colors">
+                        <span className="text-3xl font-light text-white">{obstacleMarkers.length}</span>
+                        <span className="text-[9px] text-zinc-500 uppercase tracking-widest">Obstacles</span>
+                      </div>
+                    </div>
 
-            <div className={`w-full h-full absolute inset-0 ${viewMode === 'normal' ? 'opacity-100 z-10' : 'opacity-0 z-0 hidden'} transition-opacity duration-300`}>
-               <Map center={[coordinates.lng, coordinates.lat]} zoom={18} />
+                    <Button variant="ghost" className="w-full border-t border-white/5 pt-6 mt-2 rounded-t-none" onClick={exportRoofData}>
+                      <Download size={14} /> Export GeoJSON
+                    </Button>
+                  </Card>
+                  
+                  <Card className="flex-1 flex flex-col gap-4">
+                    <h3 className="text-xs uppercase tracking-[0.2em] font-medium text-zinc-400 flex items-center gap-2">
+                       <Monitor size={14} className="text-white" /> Log
+                    </h3>
+                    <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-4 overflow-y-auto custom-scrollbar flex flex-col gap-3">
+                       {roofElements.length === 0 && obstacleMarkers.length === 0 ? (
+                         <div className="m-auto text-zinc-600 text-[10px] uppercase tracking-widest text-center">No entities drawn</div>
+                       ) : (
+                         <>
+                           {roofElements.map(el => (
+                             <div key={el.id} className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-lg flex items-center gap-2 tracking-wide font-mono border border-white/5">
+                               <Square size={10} className="text-white/60" /> {el.type.toUpperCase()} #{el.id.toString().slice(-4)}
+                             </div>
+                           ))}
+                           {obstacleMarkers.map(el => (
+                             <div key={el.id} className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-lg flex items-center gap-2 tracking-wide font-mono border border-white/5">
+                               <Circle size={10} className="text-white/60" /> MKR #{el.id.toString().slice(-4)}
+                             </div>
+                           ))}
+                         </>
+                       )}
+                    </div>
+                  </Card>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </main>
 
-      <style>{`
-        /* Global Reset */
-        body, html { background: #0a0a0a; color: #fff; }
-        
+      {/* Global Embedded Styles */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        /* Scrollbar */
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
         
+        /* Animations */
         @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(15px); } 100% { opacity: 1; transform: translateY(0); } }
-        @keyframes fade-in-down { 0% { opacity: 0; transform: translateY(-15px); } 100% { opacity: 1; transform: translateY(0); } }
-        @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+        .animate-fade-in-up { animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         
-        .animate-fade-in-up { animation: fade-in-up 0.5s ease-out forwards; }
-        .animate-fade-in-down { animation: fade-in-down 0.5s ease-out forwards; }
-        .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
-        
-        /* Minimalist Leaflet Theme */
-        .leaflet-container { font-family: inherit !important; background: #000 !important; }
+        /* Minimalist Leaflet Theme for Glassmorphism */
+        .leaflet-container { font-family: inherit !important; background: transparent !important; }
         .leaflet-control-zoom, .leaflet-draw-toolbar {
           border: 1px solid rgba(255,255,255,0.15) !important;
-          border-radius: 0 !important;
+          border-radius: 12px !important;
           overflow: hidden;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+          backdrop-filter: blur(12px) !important;
+          background: rgba(255,255,255,0.05) !important;
+          margin-top: 16px !important;
+          margin-right: 16px !important;
         }
         .leaflet-control-zoom a, .leaflet-draw-toolbar a {
-          background-color: #0a0a0a !important;
+          background-color: transparent !important;
           color: #fff !important;
-          border-color: rgba(255,255,255,0.05) !important;
-          border-radius: 0 !important;
-          width: 32px !important;
-          height: 32px !important;
-          line-height: 32px !important;
-          transition: background 0.2s;
+          border-color: rgba(255,255,255,0.1) !important;
+          width: 36px !important;
+          height: 36px !important;
+          line-height: 36px !important;
+          transition: all 0.2s ease-out;
         }
         .leaflet-control-zoom a:hover, .leaflet-draw-toolbar a:hover {
-          background-color: #262626 !important;
-          color: #fff !important;
+          background-color: rgba(255,255,255,0.1) !important;
         }
         
-        /* Make Esri map black/white */
-        .leaflet-layer {
-          filter: grayscale(100%) contrast(1.2) brightness(0.9);
-        }
+        .leaflet-interactive { stroke: #ffffff !important; stroke-width: 2px !important; fill: rgba(255,255,255,0.2) !important; }
         
         /* Tooltip */
         .monochrome-tooltip {
-          background: #000;
+          background: rgba(0,0,0,0.8);
           color: #fff;
           border: 1px solid rgba(255,255,255,0.2);
-          border-radius: 0;
+          border-radius: 6px;
+          backdrop-filter: blur(8px);
           font-family: inherit;
           font-size: 10px;
           text-transform: uppercase;
           letter-spacing: 1px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
-        .leaflet-tooltip-top:before { border-top-color: #000; }
-        
-        .leaflet-interactive {
-          stroke: #ffffff !important;
-          stroke-width: 2px !important;
-        }
-        
-        /* Hide text selection on canvas */
-        .leaflet-container { user-select: none; }
-      `}</style>
+        .leaflet-tooltip-top:before { border-top-color: rgba(0,0,0,0.8); }
+        .leaflet-container { outline: none !important; }
+      `}} />
     </div>
   );
 }
