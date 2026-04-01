@@ -2,6 +2,7 @@ import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
 import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
+import { SolarHeatmap } from "@/lib/solarHeatmap";
 import { SunProjection, SunProjectionSeason, getSunSeasonLabel } from "@/lib/sunProjection";
 import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
@@ -31,6 +32,7 @@ type WorkspaceContentProps = {
   onSunTimeOfDayChange: (next: number) => void;
   sunSeason: SunProjectionSeason;
   onSunSeasonChange: (next: SunProjectionSeason) => void;
+  solarHeatmap: SolarHeatmap | null;
 };
 
 function formatSqFt(value: number) {
@@ -49,12 +51,14 @@ function SunPathProjectionPanel({
   onSunTimeOfDayChange,
   sunSeason,
   onSunSeasonChange,
+  solarHeatmap,
 }: {
   sunProjection: SunProjection;
   sunTimeOfDay: number;
   onSunTimeOfDayChange: (next: number) => void;
   sunSeason: SunProjectionSeason;
   onSunSeasonChange: (next: SunProjectionSeason) => void;
+  solarHeatmap: SolarHeatmap | null;
 }) {
   const seasons: SunProjectionSeason[] = ["summer-solstice", "winter-solstice"];
 
@@ -129,6 +133,24 @@ function SunPathProjectionPanel({
           ? `Ray extends 50 m toward ${Math.round(sunProjection.azimuthDegrees)}deg for the selected solstice snapshot.`
           : "Sun is below the horizon for this snapshot. The ray remains visible as a directional cue."}
       </div>
+
+      {solarHeatmap && (
+        <div className="rounded-xl border border-white/10 bg-black/25 p-3 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-300">Roof Heat Map</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-lime-200">{solarHeatmap.bestSideLabel}</div>
+          </div>
+          <div className="h-2 rounded-full bg-gradient-to-r from-blue-700 via-amber-400 to-lime-400" />
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-zinc-500">
+            <span>Lower Yield</span>
+            <span>Higher Yield</span>
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/75 leading-relaxed">
+            Heat colors estimate stronger panel zones from the footprint shape, {getSunSeasonLabel(sunSeason).toLowerCase()}
+            {" "}daylight sweep, and the current time focus.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -199,6 +221,7 @@ function WorkspaceDataPanel({
   onSunTimeOfDayChange,
   sunSeason,
   onSunSeasonChange,
+  solarHeatmap,
 }: {
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
@@ -221,6 +244,7 @@ function WorkspaceDataPanel({
   onSunTimeOfDayChange: (next: number) => void;
   sunSeason: SunProjectionSeason;
   onSunSeasonChange: (next: SunProjectionSeason) => void;
+  solarHeatmap: SolarHeatmap | null;
 }) {
   return (
     <div className="w-full lg:w-72 flex flex-col gap-6 shrink-0 animate-fade-in-up mt-6 lg:mt-0">
@@ -288,6 +312,7 @@ function WorkspaceDataPanel({
             onSunTimeOfDayChange={onSunTimeOfDayChange}
             sunSeason={sunSeason}
             onSunSeasonChange={onSunSeasonChange}
+            solarHeatmap={solarHeatmap}
           />
         )}
 
@@ -418,6 +443,7 @@ export function WorkspaceContent({
   onSunTimeOfDayChange,
   sunSeason,
   onSunSeasonChange,
+  solarHeatmap,
 }: WorkspaceContentProps) {
   if (!coordinates) {
     return <EmptyState />;
@@ -449,6 +475,7 @@ export function WorkspaceContent({
           onSunTimeOfDayChange={onSunTimeOfDayChange}
           sunSeason={sunSeason}
           onSunSeasonChange={onSunSeasonChange}
+          solarHeatmap={solarHeatmap}
         />
       )}
     </div>

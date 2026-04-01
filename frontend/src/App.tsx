@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./styles.css";
 
 import "leaflet/dist/leaflet.css";
@@ -10,6 +10,7 @@ import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
+import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
 import { SunProjectionSeason, calculateSunProjection, getActiveRoofFootprint } from "@/lib/sunProjection";
 import "@/styles/leaflet-custom.css";
 import { AutoRoofDetectionResult, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
@@ -105,12 +106,26 @@ export default function App() {
   } = useAutoRoofDetection();
 
   const activeRoofFootprint = getActiveRoofFootprint(roofElements);
-  const sunProjection = activeRoofFootprint
-    ? calculateSunProjection(activeRoofFootprint, {
-        season: sunSeason,
-        timeOfDay: sunTimeOfDay,
-      })
-    : null;
+  const sunProjection = useMemo(
+    () =>
+      activeRoofFootprint
+        ? calculateSunProjection(activeRoofFootprint, {
+            season: sunSeason,
+            timeOfDay: sunTimeOfDay,
+          })
+        : null,
+    [activeRoofFootprint, sunSeason, sunTimeOfDay]
+  );
+  const solarHeatmap = useMemo(
+    () =>
+      activeRoofFootprint
+        ? calculateSolarHeatmap(activeRoofFootprint, {
+            season: sunSeason,
+            focusTimeOfDay: sunTimeOfDay,
+          })
+        : null,
+    [activeRoofFootprint, sunSeason, sunTimeOfDay]
+  );
 
   const {
     mapContainerRef,
@@ -125,7 +140,8 @@ export default function App() {
     showMapTools,
     setRoofElements,
     setObstacleMarkers,
-    sunProjection
+    sunProjection,
+    solarHeatmap
   );
 
   useEffect(() => {
@@ -322,6 +338,7 @@ export default function App() {
             onSunTimeOfDayChange={setSunTimeOfDay}
             sunSeason={sunSeason}
             onSunSeasonChange={setSunSeason}
+            solarHeatmap={solarHeatmap}
           />
         </div>
       </main>

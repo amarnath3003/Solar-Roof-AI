@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet-draw";
+import { SolarHeatmap } from "@/lib/solarHeatmap";
 import { SunProjection } from "@/lib/sunProjection";
 import { AutoRoofDetectionResult, Coordinates, RoofElement, ObstacleMarker } from "@/types";
 
@@ -30,10 +31,12 @@ export function useLeafletDraw(
   showMapTools: boolean,
   setRoofElements: React.Dispatch<React.SetStateAction<RoofElement[]>>,
   setObstacleMarkers: React.Dispatch<React.SetStateAction<ObstacleMarker[]>>,
-  sunProjection: SunProjection | null
+  sunProjection: SunProjection | null,
+  solarHeatmap: SolarHeatmap | null
 ) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const heatmapGroupRef = useRef<L.FeatureGroup | null>(null);
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
   const previewGroupRef = useRef<L.FeatureGroup | null>(null);
   const sunPathGroupRef = useRef<L.FeatureGroup | null>(null);
@@ -136,13 +139,16 @@ export function useLeafletDraw(
       );
       esriImagery.addTo(map);
 
+      const heatmapItems = new L.FeatureGroup();
       const drawnItems = new L.FeatureGroup();
       const previewItems = new L.FeatureGroup();
       const sunPathItems = new L.FeatureGroup();
+      map.addLayer(heatmapItems);
       map.addLayer(drawnItems);
       map.addLayer(previewItems);
       map.addLayer(sunPathItems);
       mapRef.current = map;
+      heatmapGroupRef.current = heatmapItems;
       featureGroupRef.current = drawnItems;
       previewGroupRef.current = previewItems;
       sunPathGroupRef.current = sunPathItems;
@@ -209,6 +215,33 @@ export function useLeafletDraw(
   useEffect(() => {
     syncDrawTools();
   }, [syncDrawTools]);
+
+  useEffect(() => {
+    const heatmapGroup = heatmapGroupRef.current;
+    if (!heatmapGroup) {
+      return;
+    }
+
+    heatmapGroup.clearLayers();
+
+    if (!solarHeatmap) {
+      return;
+    }
+
+    solarHeatmap.cells.forEach((cell) => {
+      const layer = L.polygon(
+        cell.corners.map((point) => [point.lat, point.lng] as [number, number]),
+        {
+          stroke: false,
+          fillColor: cell.fillColor,
+          fillOpacity: cell.fillOpacity,
+          interactive: false,
+          bubblingMouseEvents: false,
+        }
+      );
+      heatmapGroup.addLayer(layer);
+    });
+  }, [solarHeatmap]);
 
   useEffect(() => {
     const sunPathGroup = sunPathGroupRef.current;
