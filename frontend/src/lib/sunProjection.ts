@@ -1,4 +1,3 @@
-import { centroid, destination, point } from "@turf/turf";
 import * as SunCalc from "suncalc";
 import { Coordinates, RoofElement } from "@/types";
 
@@ -42,6 +41,12 @@ const SEASON_CONFIG: Record<
   },
 };
 
+const EARTH_RADIUS_METERS = 6_371_000;
+
+function toRadians(degrees: number) {
+  return (degrees * Math.PI) / 180;
+}
+
 function toDegrees(radians: number) {
   return (radians * 180) / Math.PI;
 }
@@ -70,6 +75,127 @@ function createSeasonDate(season: SunProjectionSeason, timeOfDay: number) {
   return new Date(currentYear, month, day, hours, minutes, 0, 0);
 }
 
+function normalizeRing(ring: number[][]) {
+  if (ring.length <= 1) {
+    return ring;
+  }
+
+  const [firstLng, firstLat] = ring[0];
+  const [lastLng, lastLat] = ring[ring.length - 1];
+
+  if (firstLng === lastLng && firstLat === lastLat) {
+    return ring.slice(0, ring.length - 1);
+  }
+
+  return ring;
+}
+
+function getRingArea(ring: number[][]) {
+  let area = 0;
+
+  for (let index = 0; index < ring.length; index += 1) {
+    const [currentLng, currentLat] = ring[index];
+    const [nextLng, nextLat] = ring[(index + 1) % ring.length];
+    area += currentLng * nextLat - nextLng * currentLat;
+  }
+
+  return area / 2;
+}
+
+function getRingCentroid(ring: number[][]): Coordinates | null {
+  const normalizedRing = normalizeRing(ring);
+  if (normalizedRing.length < 3) {
+    return null;
+  }
+
+  const signedArea = getRingArea(normalizedRing);
+  if (Math.abs(signedArea) < Number.EPSILON) {
+    const total = normalizedRing.reduce(
+      (sum, [lng, lat]) => ({
+        lat: sum.lat + lat,
+        lng: sum.lng + lng,
+      }),
+      { lat: 0, lng: 0 }
+    );
+
+    return {
+      lat: total.lat / normalizedRing.length,
+      lng: total.lng / normalizedRing.length,
+    };
+  }
+
+  let centroidLng = 0;
+  let centroidLat = 0;
+
+  for (let index = 0; index < normalizedRing.length; index += 1) {
+    const [currentLng, currentLat] = normalizedRing[index];
+    const [nextLng, nextLat] = normalizedRing[(index + 1) % normalizedRing.length];
+    const cross = currentLng * nextLat - nextLng * currentLat;
+    centroidLng += (currentLng + nextLng) * cross;
+    centroidLat += (currentLat + nextLat) * cross;
+  }
+
+  return {
+    lng: centroidLng / (6 * signedArea),
+    lat: centroidLat / (6 * signedArea),
+  };
+}
+
+function getPrimaryRing(roofElement: RoofElement) {
+  const geometry = roofElement.geoJSON.geometry;
+  if (!geometry) {
+    return null;
+  }
+
+  if (geometry.type === "Polygon") {
+    return geometry.coordinates[0] ?? null;
+  }
+
+  if (geometry.type !== "MultiPolygon") {
+    return null;
+  }
+
+  let selectedRing: number[][] | null = null;
+  let selectedArea = 0;
+
+  geometry.coordinates.forEach((polygon) => {
+    const ring = polygon[0];
+    if (!ring || ring.length < 3) {
+      return;
+    }
+
+    const area = Math.abs(getRingArea(normalizeRing(ring)));
+    if (area > selectedArea) {
+      selectedArea = area;
+      selectedRing = ring;
+    }
+  });
+
+  return selectedRing;
+}
+
+function projectPoint(origin: Coordinates, distanceMeters: number, bearingDegrees: number): Coordinates {
+  const angularDistance = distanceMeters / EARTH_RADIUS_METERS;
+  const bearing = toRadians(bearingDegrees);
+  const originLat = toRadians(origin.lat);
+  const originLng = toRadians(origin.lng);
+  const projectedLat = Math.asin(
+    Math.sin(originLat) * Math.cos(angularDistance) +
+      Math.cos(originLat) * Math.sin(angularDistance) * Math.cos(bearing)
+  );
+  const projectedLng =
+    originLng +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(originLat),
+      Math.cos(angularDistance) - Math.sin(originLat) * Math.sin(projectedLat)
+    );
+
+  return {
+    lat: toDegrees(projectedLat),
+    lng: toDegrees(projectedLng),
+  };
+}
+
 function isSupportedRoofGeometry(roofElement: RoofElement) {
   const geometryType = roofElement.geoJSON.geometry?.type;
   return geometryType === "Polygon" || geometryType === "MultiPolygon";
@@ -95,14 +221,17 @@ export function getRoofFootprintCenter(roofElement: RoofElement): Coordinates | 
     return null;
   }
 
-  const centerPoint = centroid(roofElement.geoJSON as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>);
-  const [lng, lat] = centerPoint.geometry.coordinates;
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  const primaryRing = getPrimaryRing(roofElement);
+  if (!primaryRing) {
     return null;
   }
 
-  return { lat, lng };
+  const center = getRingCentroid(primaryRing);
+  if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng)) {
+    return null;
+  }
+
+  return center;
 }
 
 export function calculateSunProjection(
@@ -118,20 +247,11 @@ export function calculateSunProjection(
   const sunPosition = SunCalc.getPosition(date, center.lat, center.lng);
   const azimuthDegrees = toCompassDegrees(sunPosition.azimuth);
   const altitudeDegrees = toDegrees(sunPosition.altitude);
-  const endpointPoint = destination(
-    point([center.lng, center.lat]),
-    SUN_PATH_LENGTH_METERS / 1000,
-    azimuthDegrees,
-    { units: "kilometers" }
-  );
-  const [endpointLng, endpointLat] = endpointPoint.geometry.coordinates;
+  const endpoint = projectPoint(center, SUN_PATH_LENGTH_METERS, azimuthDegrees);
 
   return {
     center,
-    endpoint: {
-      lat: endpointLat,
-      lng: endpointLng,
-    },
+    endpoint,
     azimuthDegrees,
     altitudeDegrees,
     date,
