@@ -27,6 +27,7 @@ type CellResult = {
 };
 
 export interface SolarHeatCell {
+  center: Coordinates;
   corners: Coordinates[];
   score: number;
   displayScore: number;
@@ -478,6 +479,7 @@ export function calculateSolarHeatmap(
         : 180;
   const averageExposureScore = cellResults.reduce((sum, cell) => sum + cell.score, 0) / cellResults.length;
   const cells = cellResults.map((cell) => ({
+    center: unprojectFromMeters(cell.center, center),
     corners: cell.corners,
     score: cell.score,
     displayScore: getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform),

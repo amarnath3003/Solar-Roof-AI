@@ -7,10 +7,10 @@ import {
   buffer as turfBuffer,
   circle as turfCircle,
   centerOfMass,
-  destination,
   point,
   polygon,
 } from "@turf/turf";
+import type { SolarHeatmap } from "@/lib/solarHeatmap";
 import { Coordinates, ObstacleMarker, PanelLayoutContext, PanelTypeDefinition, PanelTypeId, RoofElement } from "@/types";
 
 type SupportedLayoutFeature = GeoJSON.Feature<
@@ -32,6 +32,11 @@ export interface PanelPlacementValidation {
 export interface AutoPackPanelsResult {
   panels: GeoJSON.Feature<GeoJSON.Polygon>[];
   attempts: number;
+}
+
+export interface AutoPackPanelsOptions {
+  maxPanels?: number;
+  solarHeatmap?: SolarHeatmap | null;
 }
 
 const GRID_OFFSETS: ReadonlyArray<readonly [number, number]> = [
@@ -318,10 +323,59 @@ export function createPanelFeatureAtCenter(
   return createPanelFeatureFromLocalCenter({ x: 0, y: 0 }, center, panelTypeId, alignmentAngleDegrees);
 }
 
+function getNormalizedMaxPanels(maxPanels?: number) {
+  if (typeof maxPanels !== "number" || !Number.isFinite(maxPanels)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.min(25, Math.max(1, Math.floor(maxPanels)));
+}
+
+function getPanelSolarScore(
+  panel: GeoJSON.Feature<GeoJSON.Polygon>,
+  solarHeatmap?: SolarHeatmap | null
+) {
+  if (!solarHeatmap || solarHeatmap.cells.length === 0) {
+    return 0;
+  }
+
+  const coveredCells = solarHeatmap.cells.filter((cell) =>
+    booleanContains(panel, point([cell.center.lng, cell.center.lat]))
+  );
+
+  if (coveredCells.length === 0) {
+    return 0;
+  }
+
+  return coveredCells.reduce((sum, cell) => sum + cell.score, 0) / coveredCells.length;
+}
+
+function selectPreferredPanels(
+  candidatePanels: GeoJSON.Feature<GeoJSON.Polygon>[],
+  maxPanels: number,
+  solarHeatmap?: SolarHeatmap | null
+) {
+  const rankedPanels = candidatePanels
+    .map((panel, index) => ({
+      panel,
+      index,
+      score: getPanelSolarScore(panel, solarHeatmap),
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+
+  const selectedPanels = rankedPanels.slice(0, Math.min(rankedPanels.length, maxPanels));
+
+  return {
+    panels: selectedPanels.map(({ panel }) => panel),
+    totalScore: selectedPanels.reduce((sum, panel) => sum + panel.score, 0),
+  };
+}
+
 export function autoPackPanels(
   context: PanelLayoutContext,
   panelTypeId: PanelTypeId,
-  alignmentAngleDegrees = 0
+  alignmentAngleDegrees = 0,
+  options: AutoPackPanelsOptions = {}
 ): AutoPackPanelsResult {
   if (!context.primaryRoof) {
     return {
@@ -356,7 +410,9 @@ export function autoPackPanels(
     }
   );
   const { widthM, heightM } = PANEL_TYPES[panelTypeId];
+  const maxPanels = getNormalizedMaxPanels(options.maxPanels);
   let bestPanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+  let bestScore = Number.NEGATIVE_INFINITY;
 
   GRID_OFFSETS.forEach(([xOffsetFactor, yOffsetFactor]) => {
     const startX = rotatedBounds.minX + widthM * (0.5 + xOffsetFactor);
@@ -380,8 +436,14 @@ export function autoPackPanels(
       centerY += heightM;
     }
 
-    if (candidatePanels.length > bestPanels.length) {
-      bestPanels = candidatePanels;
+    const preferredPanels = selectPreferredPanels(candidatePanels, maxPanels, options.solarHeatmap);
+
+    if (
+      preferredPanels.panels.length > bestPanels.length ||
+      (preferredPanels.panels.length === bestPanels.length && preferredPanels.totalScore > bestScore)
+    ) {
+      bestPanels = preferredPanels.panels;
+      bestScore = preferredPanels.totalScore;
     }
   });
 

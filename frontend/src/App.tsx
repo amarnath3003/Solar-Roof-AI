@@ -104,6 +104,7 @@ export default function App() {
   const [solarOverlayEnabled, setSolarOverlayEnabled] = useState(false);
   const [panelTypeId, setPanelTypeId] = useState<PanelTypeId>("standard-residential");
   const [panelLayoutMode, setPanelLayoutMode] = useState<PanelLayoutMode>("auto");
+  const [autoPackPanelLimit, setAutoPackPanelLimit] = useState(25);
   const [placedPanels, setPlacedPanels] = useState<PlacedPanel[]>([]);
   const [panelLayoutMessage, setPanelLayoutMessage] = useState<string | null>(null);
 
@@ -253,7 +254,10 @@ export default function App() {
       return;
     }
 
-    const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees);
+    const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
+      maxPanels: autoPackPanelLimit,
+      solarHeatmap: solarAnalysis,
+    });
     setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
 
     if (panels.length === 0) {
@@ -262,9 +266,11 @@ export default function App() {
     }
 
     setPanelLayoutMessage(
-      `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s).`
+      solarAnalysis
+        ? `Auto-packed ${panels.length} panel(s), prioritizing the greener solar zones first and staying within the ${autoPackPanelLimit}-panel cap.`
+        : `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s) and staying within the ${autoPackPanelLimit}-panel cap.`
     );
-  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId]);
+  }, [autoPackPanelLimit, panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, solarAnalysis]);
 
   const clearAllPanels = useCallback(() => {
     setPlacedPanels([]);
@@ -412,6 +418,8 @@ export default function App() {
           onPanelTypeChange={setPanelTypeId}
           panelLayoutMode={panelLayoutMode}
           onPanelLayoutModeChange={setPanelLayoutMode}
+          autoPackPanelLimit={autoPackPanelLimit}
+          onAutoPackPanelLimitChange={setAutoPackPanelLimit}
           onAutoPackPanels={autoPackPanelLayout}
           onClearPanels={clearAllPanels}
           placedPanelCount={placedPanels.length}

@@ -41,6 +41,8 @@ type WorkspaceContentProps = {
   onPanelTypeChange: (next: PanelTypeId) => void;
   panelLayoutMode: PanelLayoutMode;
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
+  autoPackPanelLimit: number;
+  onAutoPackPanelLimitChange: (next: number) => void;
   onAutoPackPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
@@ -55,6 +57,8 @@ type PanelLayoutPanelProps = {
   onPanelTypeChange: (next: PanelTypeId) => void;
   panelLayoutMode: PanelLayoutMode;
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
+  autoPackPanelLimit: number;
+  onAutoPackPanelLimitChange: (next: number) => void;
   onAutoPackPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
@@ -86,6 +90,8 @@ type WorkspaceDataPanelProps = {
   onPanelTypeChange: (next: PanelTypeId) => void;
   panelLayoutMode: PanelLayoutMode;
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
+  autoPackPanelLimit: number;
+  onAutoPackPanelLimitChange: (next: number) => void;
   onAutoPackPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
@@ -196,6 +202,8 @@ function PanelLayoutPanel({
   onPanelTypeChange,
   panelLayoutMode,
   onPanelLayoutModeChange,
+  autoPackPanelLimit,
+  onAutoPackPanelLimitChange,
   onAutoPackPanels,
   onClearPanels,
   placedPanelCount,
@@ -261,6 +269,25 @@ function PanelLayoutPanel({
         </div>
       </div>
 
+      <div className="rounded-2xl border border-emerald-300/15 bg-emerald-500/10 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-emerald-100">Max auto-pack panels</div>
+          <div className="text-sm text-white">{autoPackPanelLimit}</div>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={25}
+          step={1}
+          value={autoPackPanelLimit}
+          onChange={(event) => onAutoPackPanelLimitChange(Number(event.target.value))}
+          className="mt-3 w-full accent-emerald-400"
+        />
+        <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-emerald-100/75 leading-relaxed">
+          Auto-pack will place up to this many panels and favor the greener solar cells first.
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
           <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Total Panels Placed</div>
@@ -323,6 +350,8 @@ function WorkspaceDataPanel({
   onPanelTypeChange,
   panelLayoutMode,
   onPanelLayoutModeChange,
+  autoPackPanelLimit,
+  onAutoPackPanelLimitChange,
   onAutoPackPanels,
   onClearPanels,
   placedPanelCount,
@@ -468,6 +497,8 @@ function WorkspaceDataPanel({
               onPanelTypeChange={onPanelTypeChange}
               panelLayoutMode={panelLayoutMode}
               onPanelLayoutModeChange={onPanelLayoutModeChange}
+              autoPackPanelLimit={autoPackPanelLimit}
+              onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
               onAutoPackPanels={onAutoPackPanels}
               onClearPanels={onClearPanels}
               placedPanelCount={placedPanelCount}
@@ -547,6 +578,8 @@ export function WorkspaceContent({
   onPanelTypeChange,
   panelLayoutMode,
   onPanelLayoutModeChange,
+  autoPackPanelLimit,
+  onAutoPackPanelLimitChange,
   onAutoPackPanels,
   onClearPanels,
   placedPanelCount,
@@ -589,6 +622,8 @@ export function WorkspaceContent({
           onPanelTypeChange={onPanelTypeChange}
           panelLayoutMode={panelLayoutMode}
           onPanelLayoutModeChange={onPanelLayoutModeChange}
+          autoPackPanelLimit={autoPackPanelLimit}
+          onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
           onAutoPackPanels={onAutoPackPanels}
           onClearPanels={onClearPanels}
           placedPanelCount={placedPanelCount}
