@@ -5,11 +5,12 @@ import {
   booleanDisjoint,
   booleanIntersects,
   buffer as turfBuffer,
+  circle as turfCircle,
   destination,
   point,
   polygon,
 } from "@turf/turf";
-import { Coordinates, PanelLayoutContext, PanelTypeDefinition, PanelTypeId, RoofElement } from "@/types";
+import { Coordinates, ObstacleMarker, PanelLayoutContext, PanelTypeDefinition, PanelTypeId, RoofElement } from "@/types";
 
 type SupportedLayoutFeature = GeoJSON.Feature<
   GeoJSON.Polygon | GeoJSON.MultiPolygon | GeoJSON.LineString | GeoJSON.MultiLineString
@@ -42,6 +43,7 @@ const GRID_OFFSETS: ReadonlyArray<readonly [number, number]> = [
 const DISTANCE_UNITS_KM = "kilometers";
 const BUFFER_UNITS_M = "meters";
 const EPSILON = 1e-9;
+const DEFAULT_OBSTACLE_CLEARANCE_METERS = 0.7;
 
 export const PANEL_TYPES: Record<PanelTypeId, PanelTypeDefinition> = {
   "standard-residential": {
@@ -143,7 +145,31 @@ export function getPanelTypeDefinition(panelTypeId: PanelTypeId) {
   return PANEL_TYPES[panelTypeId];
 }
 
-export function buildPanelLayoutContext(roofElements: RoofElement[], edgeBufferMeters = 0): PanelLayoutContext {
+function getObstacleClearanceMeters(obstacleMarker: ObstacleMarker) {
+  if (typeof obstacleMarker.estimatedHeightM === "number" && Number.isFinite(obstacleMarker.estimatedHeightM)) {
+    return Math.max(DEFAULT_OBSTACLE_CLEARANCE_METERS, obstacleMarker.estimatedHeightM * 0.35);
+  }
+
+  return DEFAULT_OBSTACLE_CLEARANCE_METERS;
+}
+
+function createObstacleExclusionZone(obstacleMarker: ObstacleMarker): GeoJSON.Feature<GeoJSON.Polygon> {
+  return turfCircle([obstacleMarker.position[1], obstacleMarker.position[0]], getObstacleClearanceMeters(obstacleMarker) / 1000, {
+    units: DISTANCE_UNITS_KM,
+    steps: 24,
+    properties: {
+      obstacleId: obstacleMarker.id,
+      obstacleSource: obstacleMarker.source,
+      obstacleLabel: obstacleMarker.label,
+    },
+  }) as GeoJSON.Feature<GeoJSON.Polygon>;
+}
+
+export function buildPanelLayoutContext(
+  roofElements: RoofElement[],
+  obstacleMarkers: ObstacleMarker[] = [],
+  edgeBufferMeters = 0
+): PanelLayoutContext {
   const layoutFeatures = roofElements
     .map(toSupportedLayoutFeature)
     .filter((feature): feature is SupportedLayoutFeature => feature !== null);
@@ -166,9 +192,16 @@ export function buildPanelLayoutContext(roofElements: RoofElement[], edgeBufferM
             feature !== primaryRoof && booleanIntersects(primaryRoof, feature)
         );
 
+  const obstacleExclusionZones =
+    primaryRoof === null
+      ? []
+      : obstacleMarkers
+          .map(createObstacleExclusionZone)
+          .filter((feature) => booleanIntersects(primaryRoof, feature));
+
   return {
     primaryRoof,
-    exclusionZones,
+    exclusionZones: [...exclusionZones, ...obstacleExclusionZones],
     usableRoof: getValidUsableRoof(primaryRoof, edgeBufferMeters),
     edgeBufferMeters,
   };

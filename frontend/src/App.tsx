@@ -132,7 +132,10 @@ export default function App() {
   } = useAutoRoofDetection();
 
   const activeRoofFootprint = getActiveRoofFootprint(roofElements);
-  const panelLayoutContext = useMemo(() => buildPanelLayoutContext(roofElements), [roofElements]);
+  const panelLayoutContext = useMemo(
+    () => buildPanelLayoutContext(roofElements, obstacleMarkers),
+    [roofElements, obstacleMarkers]
+  );
   const selectedPanelType = useMemo(() => getPanelTypeDefinition(panelTypeId), [panelTypeId]);
   const estimatedPanelKw = useMemo(
     () => Number((placedPanels.length * selectedPanelType.kw).toFixed(1)),
@@ -205,8 +208,8 @@ export default function App() {
     }
 
     setPlacedPanels([]);
-    setPanelLayoutMessage("Roof geometry changed. Panel layout cleared so you can repack it against the new boundaries.");
-  }, [roofElements]);
+    setPanelLayoutMessage("Roof or obstacle geometry changed. Panel layout cleared so you can repack it against the new exclusions.");
+  }, [obstacleMarkers, roofElements]);
 
   const toggleWorkspace = () => {
     setShowMapTools((previous) => {
