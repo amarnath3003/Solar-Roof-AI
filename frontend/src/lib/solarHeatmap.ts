@@ -28,6 +28,7 @@ type CellResult = {
 export interface SolarHeatCell {
   corners: Coordinates[];
   score: number;
+  displayScore: number;
   fillColor: string;
   fillOpacity: number;
 }
@@ -53,6 +54,7 @@ const TIME_STEP_HOURS = 0.5;
 const DEFAULT_OBSTACLE_HEIGHT_METERS = 1.2;
 const DEFAULT_OBSTACLE_RADIUS_METERS = 0.75;
 const UNIFORM_VARIANCE_THRESHOLD = 0.06;
+const RELATIVE_RANGE_FLOOR = 0.02;
 
 function toRadians(degrees: number) {
   return (degrees * Math.PI) / 180;
@@ -305,6 +307,15 @@ function getHeatColor(score: number) {
   return blendHex("#f59e0b", "#84cc16", (score - 0.5) / 0.5);
 }
 
+function getRelativeDisplayScore(score: number, minScore: number, maxScore: number, isUniform: boolean) {
+  if (isUniform) {
+    return 0.56;
+  }
+
+  const range = Math.max(maxScore - minScore, RELATIVE_RANGE_FLOOR);
+  return clamp((score - minScore) / range, 0, 1);
+}
+
 function getZoneLabel(point: XYPoint, bounds: { minX: number; maxX: number; minY: number; maxY: number }) {
   const midX = (bounds.minX + bounds.maxX) / 2;
   const midY = (bounds.minY + bounds.maxY) / 2;
@@ -413,8 +424,13 @@ export function calculateSolarHeatmap(
   const cells = cellResults.map((cell) => ({
     corners: cell.corners,
     score: cell.score,
-    fillColor: getHeatColor(cell.score),
-    fillOpacity: clamp(0.12 + cell.score * 0.34, 0.12, 0.46),
+    displayScore: getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform),
+    fillColor: getHeatColor(getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform)),
+    fillOpacity: clamp(
+      isUniform ? 0.2 : 0.14 + getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform) * 0.3,
+      0.14,
+      0.44
+    ),
   }));
 
   return {
