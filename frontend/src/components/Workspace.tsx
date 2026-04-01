@@ -2,6 +2,7 @@ import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
 import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
+import { SunProjection, SunProjectionSeason, getSunSeasonLabel } from "@/lib/sunProjection";
 import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
 type WorkspaceContentProps = {
@@ -24,12 +25,112 @@ type WorkspaceContentProps = {
   roofAreaMessage: string | null;
   detectionConfidenceThreshold: number;
   onDetectionConfidenceThresholdChange: (next: number) => void;
+  showSunPathControls: boolean;
+  sunProjection: SunProjection | null;
+  sunTimeOfDay: number;
+  onSunTimeOfDayChange: (next: number) => void;
+  sunSeason: SunProjectionSeason;
+  onSunSeasonChange: (next: SunProjectionSeason) => void;
 };
 
 function formatSqFt(value: number) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: value >= 100 ? 0 : 1,
   }).format(value);
+}
+
+function formatDegrees(value: number) {
+  return `${value.toFixed(1)}deg`;
+}
+
+function SunPathProjectionPanel({
+  sunProjection,
+  sunTimeOfDay,
+  onSunTimeOfDayChange,
+  sunSeason,
+  onSunSeasonChange,
+}: {
+  sunProjection: SunProjection;
+  sunTimeOfDay: number;
+  onSunTimeOfDayChange: (next: number) => void;
+  sunSeason: SunProjectionSeason;
+  onSunSeasonChange: (next: SunProjectionSeason) => void;
+}) {
+  const seasons: SunProjectionSeason[] = ["summer-solstice", "winter-solstice"];
+
+  return (
+    <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-[0.15em] text-amber-200">Sun Path Projection</div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/70 leading-relaxed">
+            Live azimuth ray from the latest roof footprint center
+          </div>
+        </div>
+        <div className="rounded-full border border-amber-200/20 bg-black/30 px-3 py-1 text-[10px] uppercase tracking-[0.15em] text-amber-100">
+          {sunProjection.timeLabel}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {seasons.map((season) => {
+          const selected = sunSeason === season;
+          return (
+            <button
+              key={season}
+              type="button"
+              onClick={() => onSunSeasonChange(season)}
+              className={`rounded-xl border px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition-colors ${
+                selected
+                  ? "border-amber-200/40 bg-amber-200/15 text-amber-50"
+                  : "border-white/10 bg-black/20 text-zinc-300 hover:border-amber-200/20 hover:text-amber-100"
+              }`}
+            >
+              {getSunSeasonLabel(season)}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-zinc-300">
+          <span>Time of Day</span>
+          <span>{sunProjection.timeLabel}</span>
+        </div>
+        <input
+          type="range"
+          min={6}
+          max={18}
+          step={0.25}
+          value={sunTimeOfDay}
+          onChange={(event) => onSunTimeOfDayChange(Number(event.target.value))}
+          className="w-full accent-amber-300"
+        />
+        <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-zinc-500">
+          <span>6:00 AM</span>
+          <span>12:00 PM</span>
+          <span>6:00 PM</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Azimuth</div>
+          <div className="text-sm text-white">{formatDegrees(sunProjection.azimuthDegrees)}</div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Altitude</div>
+          <div className="text-sm text-white">{formatDegrees(sunProjection.altitudeDegrees)}</div>
+        </div>
+      </div>
+
+      <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/75 leading-relaxed">
+        {sunProjection.isAboveHorizon
+          ? `Ray extends 50 m toward ${Math.round(sunProjection.azimuthDegrees)}deg for the selected solstice snapshot.`
+          : "Sun is below the horizon for this snapshot. The ray remains visible as a directional cue."}
+      </div>
+    </div>
+  );
 }
 
 function EmptyState() {
@@ -92,6 +193,12 @@ function WorkspaceDataPanel({
   roofAreaMessage,
   detectionConfidenceThreshold,
   onDetectionConfidenceThresholdChange,
+  showSunPathControls,
+  sunProjection,
+  sunTimeOfDay,
+  onSunTimeOfDayChange,
+  sunSeason,
+  onSunSeasonChange,
 }: {
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
@@ -108,6 +215,12 @@ function WorkspaceDataPanel({
   roofAreaMessage: string | null;
   detectionConfidenceThreshold: number;
   onDetectionConfidenceThresholdChange: (next: number) => void;
+  showSunPathControls: boolean;
+  sunProjection: SunProjection | null;
+  sunTimeOfDay: number;
+  onSunTimeOfDayChange: (next: number) => void;
+  sunSeason: SunProjectionSeason;
+  onSunSeasonChange: (next: SunProjectionSeason) => void;
 }) {
   return (
     <div className="w-full lg:w-72 flex flex-col gap-6 shrink-0 animate-fade-in-up mt-6 lg:mt-0">
@@ -167,6 +280,16 @@ function WorkspaceDataPanel({
             <Download size={14} /> Export GeoJSON
           </Button>
         </div>
+
+        {showSunPathControls && sunProjection && (
+          <SunPathProjectionPanel
+            sunProjection={sunProjection}
+            sunTimeOfDay={sunTimeOfDay}
+            onSunTimeOfDayChange={onSunTimeOfDayChange}
+            sunSeason={sunSeason}
+            onSunSeasonChange={onSunSeasonChange}
+          />
+        )}
 
         {(roofAreaSummary || roofAreaMessage) && (
           <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 flex flex-col gap-3">
@@ -289,6 +412,12 @@ export function WorkspaceContent({
   roofAreaMessage,
   detectionConfidenceThreshold,
   onDetectionConfidenceThresholdChange,
+  showSunPathControls,
+  sunProjection,
+  sunTimeOfDay,
+  onSunTimeOfDayChange,
+  sunSeason,
+  onSunSeasonChange,
 }: WorkspaceContentProps) {
   if (!coordinates) {
     return <EmptyState />;
@@ -314,6 +443,12 @@ export function WorkspaceContent({
           roofAreaMessage={roofAreaMessage}
           detectionConfidenceThreshold={detectionConfidenceThreshold}
           onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
+          showSunPathControls={showSunPathControls}
+          sunProjection={sunProjection}
+          sunTimeOfDay={sunTimeOfDay}
+          onSunTimeOfDayChange={onSunTimeOfDayChange}
+          sunSeason={sunSeason}
+          onSunSeasonChange={onSunSeasonChange}
         />
       )}
     </div>

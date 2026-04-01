@@ -10,6 +10,7 @@ import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
+import { SunProjectionSeason, calculateSunProjection, getActiveRoofFootprint } from "@/lib/sunProjection";
 import "@/styles/leaflet-custom.css";
 import { AutoRoofDetectionResult, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
@@ -77,6 +78,8 @@ export default function App() {
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
   const [roofAreaSummary, setRoofAreaSummary] = useState<RoofAreaSummary | null>(null);
   const [roofAreaMessage, setRoofAreaMessage] = useState<string | null>(null);
+  const [sunTimeOfDay, setSunTimeOfDay] = useState(12);
+  const [sunSeason, setSunSeason] = useState<SunProjectionSeason>("summer-solstice");
 
   const {
     address,
@@ -101,6 +104,14 @@ export default function App() {
     clearError: clearDetectionError,
   } = useAutoRoofDetection();
 
+  const activeRoofFootprint = getActiveRoofFootprint(roofElements);
+  const sunProjection = activeRoofFootprint
+    ? calculateSunProjection(activeRoofFootprint, {
+        season: sunSeason,
+        timeOfDay: sunTimeOfDay,
+      })
+    : null;
+
   const {
     mapContainerRef,
     mapRef,
@@ -113,7 +124,8 @@ export default function App() {
     viewMode,
     showMapTools,
     setRoofElements,
-    setObstacleMarkers
+    setObstacleMarkers,
+    sunProjection
   );
 
   useEffect(() => {
@@ -304,6 +316,12 @@ export default function App() {
             roofAreaMessage={roofAreaMessage}
             detectionConfidenceThreshold={detectionConfidenceThreshold}
             onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
+            showSunPathControls={Boolean(activeRoofFootprint)}
+            sunProjection={sunProjection}
+            sunTimeOfDay={sunTimeOfDay}
+            onSunTimeOfDayChange={setSunTimeOfDay}
+            sunSeason={sunSeason}
+            onSunSeasonChange={setSunSeason}
           />
         </div>
       </main>
