@@ -102,6 +102,8 @@ export function useLeafletDraw(
   const manualPreviewGroupRef = useRef<L.FeatureGroup | null>(null);
   const drawControlRef = useRef<L.Control | null>(null);
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
+  const monochromeLayerRef = useRef<L.TileLayer | null>(null);
+  const satelliteLayerRef = useRef<L.TileLayer | null>(null);
   const { context, mode, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
 
   const getGeometryType = (layer: L.Layer) => {
@@ -194,11 +196,28 @@ export function useLeafletDraw(
         19
       );
 
+      const monochromeTiles = L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        {
+          maxZoom: 20,
+          subdomains: "abcd",
+          crossOrigin: "anonymous",
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO',
+        }
+      );
       const esriImagery = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         { maxZoom: 21, crossOrigin: "anonymous" }
       );
-      esriImagery.addTo(map);
+
+      monochromeLayerRef.current = monochromeTiles;
+      satelliteLayerRef.current = esriImagery;
+
+      if (viewMode === "satellite") {
+        esriImagery.addTo(map);
+      } else {
+        monochromeTiles.addTo(map);
+      }
 
       const heatmapItems = new L.FeatureGroup();
       const panelItems = new L.FeatureGroup();
@@ -231,7 +250,7 @@ export function useLeafletDraw(
     locationMarkerRef.current = locationMarker;
 
     setTimeout(() => mapRef.current?.invalidateSize(), 300);
-  }, [coordinates]);
+  }, [coordinates, viewMode]);
 
   const syncDrawTools = useCallback(() => {
     if (!mapRef.current || !featureGroupRef.current) return;
@@ -269,7 +288,31 @@ export function useLeafletDraw(
   }, [handleDrawCreated, handleDrawDeleted, handleDrawEdited, showMapTools]);
 
   useEffect(() => {
-    if (viewMode === "satellite" && mapRef.current) setTimeout(() => mapRef.current?.invalidateSize(), 100);
+    const map = mapRef.current;
+    const monochromeLayer = monochromeLayerRef.current;
+    const satelliteLayer = satelliteLayerRef.current;
+
+    if (!map || !monochromeLayer || !satelliteLayer) {
+      return;
+    }
+
+    if (viewMode === "satellite") {
+      if (!map.hasLayer(satelliteLayer)) {
+        satelliteLayer.addTo(map);
+      }
+      if (map.hasLayer(monochromeLayer)) {
+        map.removeLayer(monochromeLayer);
+      }
+    } else {
+      if (!map.hasLayer(monochromeLayer)) {
+        monochromeLayer.addTo(map);
+      }
+      if (map.hasLayer(satelliteLayer)) {
+        map.removeLayer(satelliteLayer);
+      }
+    }
+
+    setTimeout(() => map.invalidateSize(), 100);
   }, [viewMode]);
 
   useEffect(() => {

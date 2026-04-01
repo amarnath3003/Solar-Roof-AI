@@ -1,6 +1,5 @@
 import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
-import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
 import { PANEL_TYPES } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
@@ -173,26 +172,13 @@ function EmptyState() {
 }
 
 function MapViewport({
-  coordinates,
-  viewMode,
   mapContainerRef,
 }: {
-  coordinates: Coordinates;
-  viewMode: ViewMode;
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   return (
     <Card className="relative flex-1 overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl">
-      <div
-        className={`absolute inset-0 ${viewMode === "satellite" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"} transition-opacity duration-300`}
-      >
-        <div ref={mapContainerRef} className="w-full h-full bg-black" />
-      </div>
-      <div
-        className={`absolute inset-0 ${viewMode === "normal" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"} transition-opacity duration-300`}
-      >
-        <Map center={[coordinates.lng, coordinates.lat]} zoom={18} />
-      </div>
+      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full bg-black" />
     </Card>
   );
 }
@@ -598,7 +584,7 @@ export function WorkspaceContent({
         showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
       } overflow-hidden items-stretch`}
     >
-      <MapViewport coordinates={coordinates} viewMode={viewMode} mapContainerRef={mapContainerRef} />
+      <MapViewport mapContainerRef={mapContainerRef} />
       {showMapTools && (
         <WorkspaceDataPanel
           roofElements={roofElements}
