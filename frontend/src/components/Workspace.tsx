@@ -137,18 +137,33 @@ function SunPathProjectionPanel({
       {solarHeatmap && (
         <div className="rounded-xl border border-white/10 bg-black/25 p-3 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-300">Roof Heat Map</div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-lime-200">{solarHeatmap.bestSideLabel}</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-300">Daily Solar Heat Map</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-lime-200">{solarHeatmap.bestZoneLabel}</div>
           </div>
           <div className="h-2 rounded-full bg-gradient-to-r from-blue-700 via-amber-400 to-lime-400" />
           <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-zinc-500">
-            <span>Lower Yield</span>
-            <span>Higher Yield</span>
+            <span>Less Sun Time</span>
+            <span>More Sun Time</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+              <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Average Exposure</div>
+              <div className="text-sm text-white">{solarHeatmap.averageExposurePercent}%</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+              <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Best Cells</div>
+              <div className="text-sm text-white">{solarHeatmap.peakExposurePercent}%</div>
+            </div>
           </div>
           <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/75 leading-relaxed">
-            Heat colors estimate stronger panel zones from the footprint shape, {getSunSeasonLabel(sunSeason).toLowerCase()}
-            {" "}daylight sweep, and the current time focus.
+            Heat colors accumulate unshadowed sunlight across the full {getSunSeasonLabel(sunSeason).toLowerCase()}
+            {" "}day. The time slider still previews the live sun direction ray.
           </div>
+          {solarHeatmap.isUniform && (
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
+              Exposure is fairly even across this roof with the current footprint and obstacle data.
+            </div>
+          )}
         </div>
       )}
     </div>

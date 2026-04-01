@@ -121,10 +121,10 @@ export default function App() {
       activeRoofFootprint
         ? calculateSolarHeatmap(activeRoofFootprint, {
             season: sunSeason,
-            focusTimeOfDay: sunTimeOfDay,
+            obstacleMarkers,
           })
         : null,
-    [activeRoofFootprint, sunSeason, sunTimeOfDay]
+    [activeRoofFootprint, obstacleMarkers, sunSeason]
   );
 
   const {

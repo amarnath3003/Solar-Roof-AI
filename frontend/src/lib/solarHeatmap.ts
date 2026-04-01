@@ -1,6 +1,6 @@
 import * as SunCalc from "suncalc";
 import { SunProjectionSeason, getRoofFootprintCenter } from "@/lib/sunProjection";
-import { Coordinates, RoofElement } from "@/types";
+import { Coordinates, ObstacleMarker, RoofElement } from "@/types";
 
 type XYPoint = {
   x: number;
@@ -8,9 +8,21 @@ type XYPoint = {
 };
 
 type SolarSample = {
-  azimuthDegrees: number;
+  altitudeRadians: number;
+  shadowDirection: XYPoint;
   weight: number;
-  axisVector: XYPoint;
+};
+
+type ShadowObstacle = {
+  center: XYPoint;
+  heightM: number;
+  radiusM: number;
+};
+
+type CellResult = {
+  center: XYPoint;
+  corners: Coordinates[];
+  score: number;
 };
 
 export interface SolarHeatCell {
@@ -22,21 +34,25 @@ export interface SolarHeatCell {
 
 export interface SolarHeatmap {
   cells: SolarHeatCell[];
-  bestSideLabel: string;
-  recommendedAzimuthDegrees: number;
+  bestZoneLabel: string;
+  averageExposurePercent: number;
+  peakExposurePercent: number;
+  isUniform: boolean;
 }
 
 type SolarHeatmapOptions = {
   season: SunProjectionSeason;
-  focusTimeOfDay: number;
+  obstacleMarkers: ObstacleMarker[];
 };
 
 const EARTH_RADIUS_METERS = 6_371_000;
-const TARGET_CELL_COUNT = 110;
-const MIN_CELL_SIZE_METERS = 1;
-const MAX_CELL_SIZE_METERS = 2.5;
-const HEATMAP_BLEND_SEASON = 0.72;
-const HEATMAP_BLEND_FOCUS = 0.28;
+const TARGET_CELL_COUNT = 144;
+const MIN_CELL_SIZE_METERS = 0.9;
+const MAX_CELL_SIZE_METERS = 2.2;
+const TIME_STEP_HOURS = 0.5;
+const DEFAULT_OBSTACLE_HEIGHT_METERS = 1.2;
+const DEFAULT_OBSTACLE_RADIUS_METERS = 0.75;
+const UNIFORM_VARIANCE_THRESHOLD = 0.06;
 
 function toRadians(degrees: number) {
   return (degrees * Math.PI) / 180;
@@ -178,14 +194,6 @@ function getBounds(points: XYPoint[]) {
   );
 }
 
-function getUnitVectorFromAzimuth(azimuthDegrees: number): XYPoint {
-  const radians = toRadians(azimuthDegrees);
-  return {
-    x: Math.sin(radians),
-    y: Math.cos(radians),
-  };
-}
-
 function getCompassDegrees(azimuthRadians: number) {
   return (toDegrees(azimuthRadians) + 180 + 360) % 360;
 }
@@ -200,41 +208,71 @@ function createSeasonDate(season: SunProjectionSeason, timeOfDay: number) {
   return new Date(currentYear, month, day, hours, minutes, 0, 0);
 }
 
-function createSolarSample(origin: Coordinates, season: SunProjectionSeason, timeOfDay: number): SolarSample | null {
-  const date = createSeasonDate(season, timeOfDay);
-  const sunPosition = SunCalc.getPosition(date, origin.lat, origin.lng);
-  const altitudeWeight = Math.max(0, Math.sin(sunPosition.altitude));
+function createSolarSamples(origin: Coordinates, season: SunProjectionSeason) {
+  const samples: SolarSample[] = [];
 
-  if (altitudeWeight <= 0) {
-    return null;
+  for (let timeOfDay = 6; timeOfDay <= 18; timeOfDay += TIME_STEP_HOURS) {
+    const date = createSeasonDate(season, timeOfDay);
+    const sunPosition = SunCalc.getPosition(date, origin.lat, origin.lng);
+
+    if (sunPosition.altitude <= 0) {
+      continue;
+    }
+
+    const sunAzimuthDegrees = getCompassDegrees(sunPosition.azimuth);
+    const sunVector = {
+      x: Math.sin(toRadians(sunAzimuthDegrees)),
+      y: Math.cos(toRadians(sunAzimuthDegrees)),
+    };
+
+    samples.push({
+      altitudeRadians: sunPosition.altitude,
+      shadowDirection: {
+        x: -sunVector.x,
+        y: -sunVector.y,
+      },
+      weight: Math.sin(sunPosition.altitude) * TIME_STEP_HOURS,
+    });
   }
 
-  const azimuthDegrees = getCompassDegrees(sunPosition.azimuth);
-
-  return {
-    azimuthDegrees,
-    weight: altitudeWeight,
-    axisVector: getUnitVectorFromAzimuth(azimuthDegrees),
-  };
+  return samples;
 }
 
-function getDirectionalScore(point: XYPoint, roofPoints: XYPoint[], axisVector: XYPoint) {
-  let minProjection = Number.POSITIVE_INFINITY;
-  let maxProjection = Number.NEGATIVE_INFINITY;
+function getCellSize(areaSqM: number) {
+  return clamp(Math.sqrt(areaSqM / TARGET_CELL_COUNT), MIN_CELL_SIZE_METERS, MAX_CELL_SIZE_METERS);
+}
 
-  roofPoints.forEach((roofPoint) => {
-    const projection = roofPoint.x * axisVector.x + roofPoint.y * axisVector.y;
-    minProjection = Math.min(minProjection, projection);
-    maxProjection = Math.max(maxProjection, projection);
-  });
+function createShadowObstacles(origin: Coordinates, obstacleMarkers: ObstacleMarker[]) {
+  return obstacleMarkers.map((marker) => ({
+    center: projectToMeters([marker.position[1], marker.position[0]], origin),
+    heightM: marker.estimatedHeightM ?? DEFAULT_OBSTACLE_HEIGHT_METERS,
+    radiusM: DEFAULT_OBSTACLE_RADIUS_METERS,
+  }));
+}
 
-  const span = maxProjection - minProjection;
-  if (span <= Number.EPSILON) {
-    return 0.5;
+function isPointShadowed(point: XYPoint, obstacle: ShadowObstacle, sample: SolarSample) {
+  const tangent = Math.tan(sample.altitudeRadians);
+  if (tangent <= Number.EPSILON) {
+    return false;
   }
 
-  const pointProjection = point.x * axisVector.x + point.y * axisVector.y;
-  return clamp((pointProjection - minProjection) / span, 0, 1);
+  const shadowLength = obstacle.heightM / tangent;
+  if (shadowLength <= 0) {
+    return false;
+  }
+
+  const dx = point.x - obstacle.center.x;
+  const dy = point.y - obstacle.center.y;
+  const alongShadow = dx * sample.shadowDirection.x + dy * sample.shadowDirection.y;
+
+  if (alongShadow < 0 || alongShadow > shadowLength) {
+    return false;
+  }
+
+  const perpendicular = Math.abs(dx * sample.shadowDirection.y - dy * sample.shadowDirection.x);
+  const effectiveRadius = obstacle.radiusM + obstacle.heightM * 0.18;
+
+  return perpendicular <= effectiveRadius;
 }
 
 function interpolateChannel(start: number, end: number, amount: number) {
@@ -261,29 +299,38 @@ function blendHex(start: string, end: string, amount: number) {
 
 function getHeatColor(score: number) {
   if (score <= 0.5) {
-    return blendHex("#1d4ed8", "#f59e0b", score / 0.5);
+    return blendHex("#0f3d91", "#f59e0b", score / 0.5);
   }
 
-  return blendHex("#f59e0b", "#a3e635", (score - 0.5) / 0.5);
+  return blendHex("#f59e0b", "#84cc16", (score - 0.5) / 0.5);
 }
 
-function getBearingLabel(bearingDegrees: number) {
-  const labels = ["North", "North-East", "East", "South-East", "South", "South-West", "West", "North-West"];
-  const index = Math.round((((bearingDegrees % 360) + 360) % 360) / 45) % labels.length;
-  return labels[index];
-}
+function getZoneLabel(point: XYPoint, bounds: { minX: number; maxX: number; minY: number; maxY: number }) {
+  const midX = (bounds.minX + bounds.maxX) / 2;
+  const midY = (bounds.minY + bounds.maxY) / 2;
+  const xSpan = bounds.maxX - bounds.minX;
+  const ySpan = bounds.maxY - bounds.minY;
+  const xDelta = xSpan > Number.EPSILON ? (point.x - midX) / xSpan : 0;
+  const yDelta = ySpan > Number.EPSILON ? (point.y - midY) / ySpan : 0;
+  const horizontal = Math.abs(xDelta) < 0.12 ? "Center" : xDelta > 0 ? "East" : "West";
+  const vertical = Math.abs(yDelta) < 0.12 ? "Center" : yDelta > 0 ? "North" : "South";
 
-function getBearingFromVector(vector: XYPoint) {
-  return (toDegrees(Math.atan2(vector.x, vector.y)) + 360) % 360;
-}
+  if (horizontal === "Center" && vertical === "Center") {
+    return "Center zone";
+  }
+  if (horizontal === "Center") {
+    return `${vertical} zone`;
+  }
+  if (vertical === "Center") {
+    return `${horizontal} zone`;
+  }
 
-function getCellSize(areaSqM: number) {
-  return clamp(Math.sqrt(areaSqM / TARGET_CELL_COUNT), MIN_CELL_SIZE_METERS, MAX_CELL_SIZE_METERS);
+  return `${vertical}-${horizontal} zone`;
 }
 
 export function calculateSolarHeatmap(
   roofElement: RoofElement,
-  { season, focusTimeOfDay }: SolarHeatmapOptions
+  { season, obstacleMarkers }: SolarHeatmapOptions
 ): SolarHeatmap | null {
   const center = getRoofFootprintCenter(roofElement);
   const ring = getPrimaryRing(roofElement);
@@ -297,36 +344,19 @@ export function calculateSolarHeatmap(
     return null;
   }
 
-  const seasonalSamples = Array.from({ length: 13 }, (_, index) => 6 + index)
-    .map((timeOfDay) => createSolarSample(center, season, timeOfDay))
-    .filter((sample): sample is SolarSample => sample !== null);
-
-  if (seasonalSamples.length === 0) {
+  const solarSamples = createSolarSamples(center, season);
+  if (solarSamples.length === 0) {
     return null;
   }
 
-  const focusSample = createSolarSample(center, season, focusTimeOfDay);
+  const shadowObstacles = createShadowObstacles(center, obstacleMarkers);
   const roofAreaSqM = polygonAreaSqM(roofPoints);
   const cellSize = getCellSize(roofAreaSqM);
   const cellFootprint = cellSize * 0.88;
   const halfCell = cellFootprint / 2;
   const bounds = getBounds(roofPoints);
-  const averageSunWeight =
-    seasonalSamples.reduce((sum, sample) => sum + sample.weight, 0) / seasonalSamples.length;
-
-  const dominantVector = seasonalSamples.reduce(
-    (vector, sample) => ({
-      x: vector.x + sample.axisVector.x * sample.weight,
-      y: vector.y + sample.axisVector.y * sample.weight,
-    }),
-    { x: 0, y: 0 }
-  );
-  const recommendedAzimuthDegrees =
-    Math.abs(dominantVector.x) + Math.abs(dominantVector.y) > Number.EPSILON
-      ? getBearingFromVector(dominantVector)
-      : focusSample?.azimuthDegrees ?? 180;
-
-  const cells: SolarHeatCell[] = [];
+  const totalAvailableWeight = solarSamples.reduce((sum, sample) => sum + sample.weight, 0);
+  const cellResults: CellResult[] = [];
 
   for (let x = bounds.minX; x <= bounds.maxX; x += cellSize) {
     for (let y = bounds.minY; y <= bounds.maxY; y += cellSize) {
@@ -339,15 +369,16 @@ export function calculateSolarHeatmap(
         continue;
       }
 
-      const seasonalScoreTotal = seasonalSamples.reduce(
-        (sum, sample) => sum + getDirectionalScore(centerPoint, roofPoints, sample.axisVector) * sample.weight,
-        0
-      );
-      const seasonalWeightTotal = seasonalSamples.reduce((sum, sample) => sum + sample.weight, 0);
-      const seasonalScore = seasonalWeightTotal > 0 ? seasonalScoreTotal / seasonalWeightTotal : 0.5;
-      const focusScore = focusSample ? getDirectionalScore(centerPoint, roofPoints, focusSample.axisVector) : seasonalScore;
-      const score = clamp(seasonalScore * HEATMAP_BLEND_SEASON + focusScore * HEATMAP_BLEND_FOCUS, 0, 1);
-      const fillOpacity = clamp((0.16 + score * 0.22) * (0.7 + averageSunWeight * 0.45), 0.12, 0.44);
+      let exposedWeight = 0;
+
+      solarSamples.forEach((sample) => {
+        const blocked = shadowObstacles.some((obstacle) => isPointShadowed(centerPoint, obstacle, sample));
+        if (!blocked) {
+          exposedWeight += sample.weight;
+        }
+      });
+
+      const score = totalAvailableWeight > 0 ? clamp(exposedWeight / totalAvailableWeight, 0, 1) : 0;
       const corners = [
         { x: centerPoint.x - halfCell, y: centerPoint.y - halfCell },
         { x: centerPoint.x + halfCell, y: centerPoint.y - halfCell },
@@ -355,22 +386,42 @@ export function calculateSolarHeatmap(
         { x: centerPoint.x - halfCell, y: centerPoint.y + halfCell },
       ].map((point) => unprojectFromMeters(point, center));
 
-      cells.push({
+      cellResults.push({
+        center: centerPoint,
         corners,
         score,
-        fillColor: getHeatColor(score),
-        fillOpacity,
       });
     }
   }
 
-  if (cells.length === 0) {
+  if (cellResults.length === 0) {
     return null;
   }
 
+  const minScore = Math.min(...cellResults.map((cell) => cell.score));
+  const maxScore = Math.max(...cellResults.map((cell) => cell.score));
+  const isUniform = maxScore - minScore < UNIFORM_VARIANCE_THRESHOLD;
+  const bestCells = cellResults.filter((cell) => cell.score >= maxScore - 0.03);
+  const bestZoneCenter = bestCells.reduce(
+    (sum, cell) => ({
+      x: sum.x + cell.center.x / bestCells.length,
+      y: sum.y + cell.center.y / bestCells.length,
+    }),
+    { x: 0, y: 0 }
+  );
+  const averageExposureScore = cellResults.reduce((sum, cell) => sum + cell.score, 0) / cellResults.length;
+  const cells = cellResults.map((cell) => ({
+    corners: cell.corners,
+    score: cell.score,
+    fillColor: getHeatColor(cell.score),
+    fillOpacity: clamp(0.12 + cell.score * 0.34, 0.12, 0.46),
+  }));
+
   return {
     cells,
-    bestSideLabel: `${getBearingLabel(recommendedAzimuthDegrees)} edge`,
-    recommendedAzimuthDegrees,
+    bestZoneLabel: isUniform ? "Mostly uniform roof exposure" : getZoneLabel(bestZoneCenter, bounds),
+    averageExposurePercent: Math.round(averageExposureScore * 100),
+    peakExposurePercent: Math.round(maxScore * 100),
+    isUniform,
   };
 }
