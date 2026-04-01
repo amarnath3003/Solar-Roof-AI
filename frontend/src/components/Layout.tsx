@@ -8,6 +8,7 @@ type MainHeaderProps = {
   address: string;
   isSearching: boolean;
   searchResults: NominatimResult[];
+  recentSearches: NominatimResult[];
   coordinates: { lat: number; lng: number } | null;
   showMapTools: boolean;
   viewMode: ViewMode;
@@ -24,6 +25,7 @@ export function MainHeader({
   address,
   isSearching,
   searchResults,
+  recentSearches,
   coordinates,
   showMapTools,
   viewMode,
@@ -37,6 +39,8 @@ export function MainHeader({
 }: MainHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const showRecentSearches = address.trim().length === 0 && recentSearches.length > 0;
+  const showSearchDropdown = showRecentSearches || searchResults.length > 0;
 
   useEffect(() => {
     if (!menuOpen) {
@@ -98,11 +102,26 @@ export function MainHeader({
                 <div
                   className={cn(
                     "absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden transition-all duration-300",
-                    searchResults.length > 0 ? "max-h-72 opacity-100" : "max-h-0 opacity-0 pointer-events-none"
+                    showSearchDropdown ? "max-h-72 opacity-100" : "max-h-0 opacity-0 pointer-events-none"
                   )}
                 >
                   <div className="rounded-2xl border border-white/10 bg-black/[0.92] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
                     <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                      {showRecentSearches && (
+                        <>
+                          <div className="px-4 pb-2 pt-1 text-[10px] uppercase tracking-[0.14em] text-zinc-500">Recent searches</div>
+                          {recentSearches.map((result, index) => (
+                            <button
+                              key={`recent-${result.lat}-${result.lon}-${index}`}
+                              onClick={() => onSelectAddress(result)}
+                              className="flex w-full flex-col rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white/[0.08]"
+                            >
+                              <span className="text-sm leading-relaxed text-zinc-200">{result.display_name}</span>
+                            </button>
+                          ))}
+                          {searchResults.length > 0 ? <div className="my-2 border-t border-white/10" /> : null}
+                        </>
+                      )}
                       {searchResults.map((result, index) => (
                         <button
                           key={`${result.lat}-${result.lon}-${index}`}

@@ -113,6 +113,7 @@ export default function App() {
     setAddress,
     coordinates,
     searchResults,
+    recentSearches,
     isSearching,
     selectAddress,
     handleSearchSubmit,
@@ -379,6 +380,7 @@ export default function App() {
         address={address}
         isSearching={isSearching}
         searchResults={searchResults}
+        recentSearches={recentSearches}
         coordinates={coordinates}
         showMapTools={showMapTools}
         viewMode={viewMode}
