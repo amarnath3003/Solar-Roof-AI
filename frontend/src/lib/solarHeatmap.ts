@@ -329,10 +329,10 @@ function blendHex(start: string, end: string, amount: number) {
 
 function getHeatColor(score: number) {
   if (score <= 0.5) {
-    return blendHex("#2563eb", "#fbbf24", score / 0.5);
+    return blendHex("#3b82f6", "#fcd34d", score / 0.5);
   }
 
-  return blendHex("#fbbf24", "#a3e635", (score - 0.5) / 0.5);
+  return blendHex("#fcd34d", "#bef264", (score - 0.5) / 0.5);
 }
 
 function getRelativeDisplayScore(score: number, minScore: number, maxScore: number, isUniform: boolean) {
@@ -459,9 +459,9 @@ export function calculateSolarHeatmap(
     displayScore: getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform),
     fillColor: getHeatColor(getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform)),
     fillOpacity: clamp(
-      isUniform ? 0.24 : 0.18 + getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform) * 0.28,
-      0.18,
-      0.48
+      isUniform ? 0.28 : 0.22 + getRelativeDisplayScore(cell.score, minScore, maxScore, isUniform) * 0.3,
+      0.22,
+      0.54
     ),
   }));
 
