@@ -6,6 +6,7 @@ import {
   booleanIntersects,
   buffer as turfBuffer,
   circle as turfCircle,
+  centerOfMass,
   destination,
   point,
   polygon,
@@ -44,6 +45,7 @@ const DISTANCE_UNITS_KM = "kilometers";
 const BUFFER_UNITS_M = "meters";
 const EPSILON = 1e-9;
 const DEFAULT_OBSTACLE_CLEARANCE_METERS = 0.7;
+const EARTH_RADIUS_METERS = 6_371_000;
 
 export const PANEL_TYPES: Record<PanelTypeId, PanelTypeDefinition> = {
   "standard-residential": {
@@ -61,6 +63,53 @@ export const PANEL_TYPES: Record<PanelTypeId, PanelTypeDefinition> = {
     kw: 0.4,
   },
 };
+
+type XYPoint = {
+  x: number;
+  y: number;
+};
+
+function toRadians(degrees: number) {
+  return (degrees * Math.PI) / 180;
+}
+
+function toDegrees(radians: number) {
+  return (radians * 180) / Math.PI;
+}
+
+function projectToMeters([lng, lat]: number[], origin: Coordinates): XYPoint {
+  const avgLat = toRadians((lat + origin.lat) / 2);
+
+  return {
+    x: EARTH_RADIUS_METERS * toRadians(lng - origin.lng) * Math.cos(avgLat),
+    y: EARTH_RADIUS_METERS * toRadians(lat - origin.lat),
+  };
+}
+
+function unprojectFromMeters(pointInMeters: XYPoint, origin: Coordinates): [number, number] {
+  const originLatRadians = toRadians(origin.lat);
+
+  return [
+    origin.lng + toDegrees(pointInMeters.x / (EARTH_RADIUS_METERS * Math.cos(originLatRadians))),
+    origin.lat + toDegrees(pointInMeters.y / EARTH_RADIUS_METERS),
+  ];
+}
+
+function rotatePoint(pointInMeters: XYPoint, clockwiseDegrees: number): XYPoint {
+  const radians = toRadians(clockwiseDegrees);
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  return {
+    x: pointInMeters.x * cos + pointInMeters.y * sin,
+    y: -pointInMeters.x * sin + pointInMeters.y * cos,
+  };
+}
+
+function getReferenceCenter(feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>): Coordinates {
+  const [lng, lat] = centerOfMass(feature).geometry.coordinates;
+  return { lat, lng };
+}
 
 function isPolygonFeature(
   feature: SupportedLayoutFeature
@@ -86,23 +135,37 @@ function toSupportedLayoutFeature(roofElement: RoofElement): SupportedLayoutFeat
   return null;
 }
 
-function createPanelFromSouthWest(
-  southWest: [number, number],
-  panelTypeId: PanelTypeId
+function createPanelFeatureFromLocalCenter(
+  localCenter: XYPoint,
+  referenceCenter: Coordinates,
+  panelTypeId: PanelTypeId,
+  alignmentAngleDegrees: number
 ): GeoJSON.Feature<GeoJSON.Polygon> {
   const { widthM, heightM } = PANEL_TYPES[panelTypeId];
-  const southWestPoint = point(southWest);
-  const southEastPoint = destination(southWestPoint, widthM / 1000, 90, { units: DISTANCE_UNITS_KM });
-  const northWestPoint = destination(southWestPoint, heightM / 1000, 0, { units: DISTANCE_UNITS_KM });
-  const northEastPoint = destination(southEastPoint, heightM / 1000, 0, { units: DISTANCE_UNITS_KM });
-  const southEast = southEastPoint.geometry.coordinates as [number, number];
-  const northEast = northEastPoint.geometry.coordinates as [number, number];
-  const northWest = northWestPoint.geometry.coordinates as [number, number];
+  const halfWidth = widthM / 2;
+  const halfHeight = heightM / 2;
+  const corners = [
+    { x: -halfWidth, y: -halfHeight },
+    { x: halfWidth, y: -halfHeight },
+    { x: halfWidth, y: halfHeight },
+    { x: -halfWidth, y: halfHeight },
+  ]
+    .map((corner) =>
+      rotatePoint(
+        {
+          x: localCenter.x + corner.x,
+          y: localCenter.y + corner.y,
+        },
+        alignmentAngleDegrees
+      )
+    )
+    .map((corner) => unprojectFromMeters(corner, referenceCenter));
 
   return polygon(
-    [[southWest, southEast, northEast, northWest, southWest]],
+    [[corners[0], corners[1], corners[2], corners[3], corners[0]]],
     {
       panelTypeId,
+      alignmentAngleDegrees,
     }
   );
 }
@@ -249,37 +312,17 @@ export function validatePanelPlacement(
 
 export function createPanelFeatureAtCenter(
   center: Coordinates,
-  panelTypeId: PanelTypeId
+  panelTypeId: PanelTypeId,
+  alignmentAngleDegrees = 0
 ): GeoJSON.Feature<GeoJSON.Polygon> {
-  const { widthM, heightM } = PANEL_TYPES[panelTypeId];
-  const southCenter = destination(point([center.lng, center.lat]), heightM / 2000, 180, {
-    units: DISTANCE_UNITS_KM,
-  });
-  const northCenter = destination(point([center.lng, center.lat]), heightM / 2000, 0, {
-    units: DISTANCE_UNITS_KM,
-  });
-  const southWest = destination(southCenter, widthM / 2000, 270, {
-    units: DISTANCE_UNITS_KM,
-  }).geometry.coordinates as [number, number];
-  const southEast = destination(southCenter, widthM / 2000, 90, {
-    units: DISTANCE_UNITS_KM,
-  }).geometry.coordinates as [number, number];
-  const northEast = destination(northCenter, widthM / 2000, 90, {
-    units: DISTANCE_UNITS_KM,
-  }).geometry.coordinates as [number, number];
-  const northWest = destination(northCenter, widthM / 2000, 270, {
-    units: DISTANCE_UNITS_KM,
-  }).geometry.coordinates as [number, number];
-
-  return polygon(
-    [[southWest, southEast, northEast, northWest, southWest]],
-    {
-      panelTypeId,
-    }
-  );
+  return createPanelFeatureFromLocalCenter({ x: 0, y: 0 }, center, panelTypeId, alignmentAngleDegrees);
 }
 
-export function autoPackPanels(context: PanelLayoutContext, panelTypeId: PanelTypeId): AutoPackPanelsResult {
+export function autoPackPanels(
+  context: PanelLayoutContext,
+  panelTypeId: PanelTypeId,
+  alignmentAngleDegrees = 0
+): AutoPackPanelsResult {
   if (!context.primaryRoof) {
     return {
       panels: [],
@@ -287,48 +330,54 @@ export function autoPackPanels(context: PanelLayoutContext, panelTypeId: PanelTy
     };
   }
 
+  const referenceCenter = getReferenceCenter(context.primaryRoof);
   const [minLng, minLat, maxLng, maxLat] = turfBbox(context.primaryRoof);
+  const roofBoundsCorners: [number, number][] = [
+    [minLng, minLat],
+    [maxLng, minLat],
+    [maxLng, maxLat],
+    [minLng, maxLat],
+  ];
+  const rotatedRoofBoundsCorners = roofBoundsCorners.map((corner) =>
+    rotatePoint(projectToMeters(corner, referenceCenter), -alignmentAngleDegrees)
+  );
+  const rotatedBounds = rotatedRoofBoundsCorners.reduce(
+    (bounds, currentPoint) => ({
+      minX: Math.min(bounds.minX, currentPoint.x),
+      maxX: Math.max(bounds.maxX, currentPoint.x),
+      minY: Math.min(bounds.minY, currentPoint.y),
+      maxY: Math.max(bounds.maxY, currentPoint.y),
+    }),
+    {
+      minX: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    }
+  );
+  const { widthM, heightM } = PANEL_TYPES[panelTypeId];
   let bestPanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
 
   GRID_OFFSETS.forEach(([xOffsetFactor, yOffsetFactor]) => {
-    const { widthM, heightM } = PANEL_TYPES[panelTypeId];
-    const offsetOrigin = destination(point([minLng, minLat]), (widthM * xOffsetFactor) / 1000, 90, {
-      units: DISTANCE_UNITS_KM,
-    });
-    const startPoint = destination(offsetOrigin, (heightM * yOffsetFactor) / 1000, 0, {
-      units: DISTANCE_UNITS_KM,
-    });
-    const startLng = startPoint.geometry.coordinates[0];
-    let southLat = startPoint.geometry.coordinates[1];
+    const startX = rotatedBounds.minX + widthM * (0.5 + xOffsetFactor);
+    let centerY = rotatedBounds.minY + heightM * (0.5 + yOffsetFactor);
     const candidatePanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
 
-    while (southLat < maxLat - EPSILON) {
-      const rowOrigin = point([startLng, southLat]);
-      const northLat = destination(rowOrigin, heightM / 1000, 0, {
-        units: DISTANCE_UNITS_KM,
-      }).geometry.coordinates[1];
-
-      if (northLat > maxLat + EPSILON) {
-        break;
-      }
-
-      let westLng = startLng;
-      while (westLng < maxLng - EPSILON) {
-        const candidatePanel = createPanelFromSouthWest([westLng, southLat], panelTypeId);
-        const eastLng = candidatePanel.geometry.coordinates[0][1][0];
-
-        if (eastLng > maxLng + EPSILON) {
-          break;
-        }
-
+    while (centerY + heightM / 2 <= rotatedBounds.maxY + EPSILON) {
+      let centerX = startX;
+      while (centerX + widthM / 2 <= rotatedBounds.maxX + EPSILON) {
+        const candidatePanel = createPanelFeatureFromLocalCenter(
+          { x: centerX, y: centerY },
+          referenceCenter,
+          panelTypeId,
+          alignmentAngleDegrees
+        );
         if (validatePanelPlacement(candidatePanel, context, candidatePanels).isValid) {
           candidatePanels.push(candidatePanel);
         }
-
-        westLng = eastLng;
+        centerX += widthM;
       }
-
-      southLat = northLat;
+      centerY += heightM;
     }
 
     if (candidatePanels.length > bestPanels.length) {

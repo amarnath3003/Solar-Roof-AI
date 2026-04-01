@@ -40,6 +40,7 @@ export interface SolarHeatmap {
   averageExposurePercent: number;
   peakExposurePercent: number;
   isUniform: boolean;
+  alignmentAngleDegrees: number;
 }
 
 type SolarHeatmapOptions = {
@@ -200,6 +201,10 @@ function getBounds(points: XYPoint[]) {
 
 function getCompassDegrees(azimuthRadians: number) {
   return (toDegrees(azimuthRadians) + 180 + 360) % 360;
+}
+
+function getVectorCompassDegrees(vector: XYPoint) {
+  return (toDegrees(Math.atan2(vector.x, vector.y)) + 360) % 360;
 }
 
 function createSeasonDate(month: number, day: number, timeOfDay: number) {
@@ -452,6 +457,25 @@ export function calculateSolarHeatmap(
     }),
     { x: 0, y: 0 }
   );
+  const bestZoneVector = {
+    x: bestZoneCenter.x,
+    y: bestZoneCenter.y,
+  };
+  const bestZoneVectorMagnitude = Math.hypot(bestZoneVector.x, bestZoneVector.y);
+  const dominantSunVector = solarSamples.reduce(
+    (sum, sample) => ({
+      x: sum.x + sample.sunDirection.x * sample.weight,
+      y: sum.y + sample.sunDirection.y * sample.weight,
+    }),
+    { x: 0, y: 0 }
+  );
+  const dominantSunMagnitude = Math.hypot(dominantSunVector.x, dominantSunVector.y);
+  const alignmentAngleDegrees =
+    bestZoneVectorMagnitude > cellSize * 0.35
+      ? getVectorCompassDegrees(bestZoneVector)
+      : dominantSunMagnitude > Number.EPSILON
+        ? getVectorCompassDegrees(dominantSunVector)
+        : 180;
   const averageExposureScore = cellResults.reduce((sum, cell) => sum + cell.score, 0) / cellResults.length;
   const cells = cellResults.map((cell) => ({
     corners: cell.corners,
@@ -471,5 +495,6 @@ export function calculateSolarHeatmap(
     averageExposurePercent: Math.round(averageExposureScore * 100),
     peakExposurePercent: Math.round(maxScore * 100),
     isUniform,
+    alignmentAngleDegrees,
   };
 }

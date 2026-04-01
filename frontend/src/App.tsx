@@ -141,15 +141,17 @@ export default function App() {
     () => Number((placedPanels.length * selectedPanelType.kw).toFixed(1)),
     [placedPanels.length, selectedPanelType.kw]
   );
-  const solarHeatmap = useMemo(
+  const solarAnalysis = useMemo(
     () =>
-      activeRoofFootprint && solarOverlayEnabled
+      activeRoofFootprint
         ? calculateSolarHeatmap(activeRoofFootprint, {
             obstacleMarkers,
           })
         : null,
-    [activeRoofFootprint, obstacleMarkers, solarOverlayEnabled]
+    [activeRoofFootprint, obstacleMarkers]
   );
+  const solarHeatmap = solarOverlayEnabled ? solarAnalysis : null;
+  const panelAlignmentAngleDegrees = solarAnalysis?.alignmentAngleDegrees ?? activeRoofFootprint?.slope?.aspectDegrees ?? 180;
 
   const handlePlaceManualPanel = useCallback(
     (feature: GeoJSON.Feature<GeoJSON.Polygon>) => {
@@ -181,6 +183,7 @@ export default function App() {
       context: panelLayoutContext,
       mode: panelLayoutMode,
       selectedPanelTypeId: panelTypeId,
+      alignmentAngleDegrees: panelAlignmentAngleDegrees,
       placedPanels,
       onPlacePanel: handlePlaceManualPanel,
     }
@@ -253,7 +256,7 @@ export default function App() {
       return;
     }
 
-    const { panels } = autoPackPanels(panelLayoutContext, panelTypeId);
+    const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees);
     setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
 
     if (panels.length === 0) {
@@ -264,7 +267,7 @@ export default function App() {
     setPanelLayoutMessage(
       `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s).`
     );
-  }, [panelLayoutContext, panelTypeId]);
+  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId]);
 
   const clearAllPanels = useCallback(() => {
     setPlacedPanels([]);

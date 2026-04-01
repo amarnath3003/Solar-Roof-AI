@@ -19,6 +19,7 @@ type PanelInteractionConfig = {
   context: PanelLayoutContext;
   mode: PanelLayoutMode;
   selectedPanelTypeId: PanelTypeId;
+  alignmentAngleDegrees: number;
   placedPanels: PlacedPanel[];
   onPlacePanel: (feature: GeoJSON.Feature<GeoJSON.Polygon>) => void;
 };
@@ -101,7 +102,7 @@ export function useLeafletDraw(
   const manualPreviewGroupRef = useRef<L.FeatureGroup | null>(null);
   const drawControlRef = useRef<L.Control | null>(null);
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
-  const { context, mode, selectedPanelTypeId, placedPanels, onPlacePanel } = panelInteraction;
+  const { context, mode, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
 
   const getGeometryType = (layer: L.Layer) => {
     if (layer instanceof L.Rectangle) return "rectangle";
@@ -357,7 +358,11 @@ export function useLeafletDraw(
       }
 
       container.style.cursor = "crosshair";
-      const candidate = createPanelFeatureAtCenter({ lat: latlng.lat, lng: latlng.lng }, selectedPanelTypeId);
+      const candidate = createPanelFeatureAtCenter(
+        { lat: latlng.lat, lng: latlng.lng },
+        selectedPanelTypeId,
+        alignmentAngleDegrees
+      );
       const validation = validatePanelPlacement(
         candidate,
         context,
@@ -385,7 +390,11 @@ export function useLeafletDraw(
         return;
       }
 
-      const candidate = createPanelFeatureAtCenter({ lat: event.latlng.lat, lng: event.latlng.lng }, selectedPanelTypeId);
+      const candidate = createPanelFeatureAtCenter(
+        { lat: event.latlng.lat, lng: event.latlng.lng },
+        selectedPanelTypeId,
+        alignmentAngleDegrees
+      );
       const validation = validatePanelPlacement(
         candidate,
         context,
@@ -415,7 +424,7 @@ export function useLeafletDraw(
       container.style.cursor = "";
       clearPreview();
     };
-  }, [context, mode, onPlacePanel, placedPanels, selectedPanelTypeId, showMapTools, viewMode]);
+  }, [alignmentAngleDegrees, context, mode, onPlacePanel, placedPanels, selectedPanelTypeId, showMapTools, viewMode]);
 
   const clearDetectionPreview = useCallback(() => {
     previewGroupRef.current?.clearLayers();
