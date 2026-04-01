@@ -1,8 +1,8 @@
 import React from "react";
-import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Search, Square, Trash2, X } from "lucide-react";
+import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
 import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
-import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofElement, ViewMode } from "@/types";
+import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
 type WorkspaceContentProps = {
   coordinates: Coordinates | null;
@@ -14,14 +14,23 @@ type WorkspaceContentProps = {
   onClearAll: () => void;
   onExport: () => void;
   onAutoDetect: () => void;
+  onCalculateSqFt: () => void;
   onAcceptDetection: () => void;
   onRejectDetection: () => void;
   isAutoDetecting: boolean;
   detectionPreview: AutoRoofDetectionResult | null;
   detectionMessage: string | null;
+  roofAreaSummary: RoofAreaSummary | null;
+  roofAreaMessage: string | null;
   detectionConfidenceThreshold: number;
   onDetectionConfidenceThresholdChange: (next: number) => void;
 };
+
+function formatSqFt(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: value >= 100 ? 0 : 1,
+  }).format(value);
+}
 
 function EmptyState() {
   return (
@@ -73,11 +82,14 @@ function WorkspaceDataPanel({
   onClearAll,
   onExport,
   onAutoDetect,
+  onCalculateSqFt,
   onAcceptDetection,
   onRejectDetection,
   isAutoDetecting,
   detectionPreview,
   detectionMessage,
+  roofAreaSummary,
+  roofAreaMessage,
   detectionConfidenceThreshold,
   onDetectionConfidenceThresholdChange,
 }: {
@@ -86,11 +98,14 @@ function WorkspaceDataPanel({
   onClearAll: () => void;
   onExport: () => void;
   onAutoDetect: () => void;
+  onCalculateSqFt: () => void;
   onAcceptDetection: () => void;
   onRejectDetection: () => void;
   isAutoDetecting: boolean;
   detectionPreview: AutoRoofDetectionResult | null;
   detectionMessage: string | null;
+  roofAreaSummary: RoofAreaSummary | null;
+  roofAreaMessage: string | null;
   detectionConfidenceThreshold: number;
   onDetectionConfidenceThresholdChange: (next: number) => void;
 }) {
@@ -138,6 +153,9 @@ function WorkspaceDataPanel({
               </>
             )}
           </Button>
+          <Button variant="outline" className="w-full" onClick={onCalculateSqFt}>
+            <Ruler size={14} /> Calc Sq Ft
+          </Button>
           <Button
             variant="ghost"
             className="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
@@ -149,6 +167,39 @@ function WorkspaceDataPanel({
             <Download size={14} /> Export GeoJSON
           </Button>
         </div>
+
+        {(roofAreaSummary || roofAreaMessage) && (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 flex flex-col gap-3">
+            <div className="text-[10px] uppercase tracking-[0.15em] text-emerald-200">Solar Surface Area</div>
+            {roofAreaSummary && (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                    <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Gross</div>
+                    <div className="text-sm text-white">{formatSqFt(roofAreaSummary.grossSqFt)} sq ft</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                    <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Blocked</div>
+                    <div className="text-sm text-white">{formatSqFt(roofAreaSummary.blockedSqFt)} sq ft</div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-300/25 bg-emerald-500/10 px-3 py-2">
+                    <div className="text-[9px] uppercase tracking-[0.14em] text-emerald-200">Net</div>
+                    <div className="text-sm text-white">{formatSqFt(roofAreaSummary.netSqFt)} sq ft</div>
+                  </div>
+                </div>
+                <div className="text-[10px] text-emerald-100/80 uppercase tracking-wider leading-relaxed">
+                  {roofAreaSummary.roofShapeCount} roof outline(s) measured with a {roofAreaSummary.obstacleClearanceFeet} ft
+                  {" "}clearance around {roofAreaSummary.obstacleCount} obstacle(s).
+                </div>
+              </>
+            )}
+            {roofAreaMessage && (
+              <div className="text-[10px] text-emerald-100/80 uppercase tracking-wider leading-relaxed">
+                {roofAreaMessage}
+              </div>
+            )}
+          </div>
+        )}
 
         {detectionMessage && (
           <div className="rounded-2xl border border-white/15 bg-black/40 px-4 py-3 text-[10px] uppercase tracking-[0.12em] text-zinc-300 leading-relaxed">
@@ -228,11 +279,14 @@ export function WorkspaceContent({
   onClearAll,
   onExport,
   onAutoDetect,
+  onCalculateSqFt,
   onAcceptDetection,
   onRejectDetection,
   isAutoDetecting,
   detectionPreview,
   detectionMessage,
+  roofAreaSummary,
+  roofAreaMessage,
   detectionConfidenceThreshold,
   onDetectionConfidenceThresholdChange,
 }: WorkspaceContentProps) {
@@ -250,11 +304,14 @@ export function WorkspaceContent({
           onClearAll={onClearAll}
           onExport={onExport}
           onAutoDetect={onAutoDetect}
+          onCalculateSqFt={onCalculateSqFt}
           onAcceptDetection={onAcceptDetection}
           onRejectDetection={onRejectDetection}
           isAutoDetecting={isAutoDetecting}
           detectionPreview={detectionPreview}
           detectionMessage={detectionMessage}
+          roofAreaSummary={roofAreaSummary}
+          roofAreaMessage={roofAreaMessage}
           detectionConfidenceThreshold={detectionConfidenceThreshold}
           onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
         />

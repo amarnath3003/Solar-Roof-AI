@@ -98,3 +98,13 @@ export interface AutoRoofDetectionResult {
   obstacles: AutoDetectedObstacle[];
   metadata: AutoDetectionMetadata;
 }
+
+export interface RoofAreaSummary {
+  grossSqFt: number;
+  blockedSqFt: number;
+  netSqFt: number;
+  roofShapeCount: number;
+  obstacleCount: number;
+  obstacleClearanceFeet: number;
+  ignoredRoofShapes: number;
+}

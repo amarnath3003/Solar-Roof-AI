@@ -9,8 +9,9 @@ import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
+import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import "@/styles/leaflet-custom.css";
-import { AutoRoofDetectionResult, ObstacleMarker, RoofElement, ViewMode } from "@/types";
+import { AutoRoofDetectionResult, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
 function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: ObstacleMarker[]) {
   const featureCollection: GeoJSON.FeatureCollection = {
@@ -74,6 +75,8 @@ export default function App() {
   const [detectionConfidenceThreshold, setDetectionConfidenceThreshold] = useState(0.45);
   const [detectionPreview, setDetectionPreview] = useState<AutoRoofDetectionResult | null>(null);
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
+  const [roofAreaSummary, setRoofAreaSummary] = useState<RoofAreaSummary | null>(null);
+  const [roofAreaMessage, setRoofAreaMessage] = useState<string | null>(null);
 
   const {
     address,
@@ -116,9 +119,16 @@ export default function App() {
   useEffect(() => {
     setDetectionPreview(null);
     setDetectionMessage(null);
+    setRoofAreaSummary(null);
+    setRoofAreaMessage(null);
     clearDetectionPreview();
     clearDetectionError();
   }, [coordinates, clearDetectionError, clearDetectionPreview]);
+
+  useEffect(() => {
+    setRoofAreaSummary(null);
+    setRoofAreaMessage(null);
+  }, [roofElements, obstacleMarkers]);
 
   const toggleWorkspace = () => {
     setShowMapTools((previous) => {
@@ -136,6 +146,8 @@ export default function App() {
     featureGroupRef.current?.clearLayers();
     clearDetectionPreview();
     setDetectionPreview(null);
+    setRoofAreaSummary(null);
+    setRoofAreaMessage(null);
     setRoofElements([]);
     setObstacleMarkers([]);
   };
@@ -219,6 +231,23 @@ export default function App() {
     setDetectionMessage("Detection preview cleared. You can rerun auto detection or continue manual mapping.");
   }, [clearDetectionPreview]);
 
+  const calculateSqFt = useCallback(() => {
+    const summary = calculateRoofAreaSummary(featureGroupRef.current);
+
+    if (!summary) {
+      setRoofAreaSummary(null);
+      setRoofAreaMessage("Draw at least one roof polygon, rectangle, or circle before calculating solar surface area.");
+      return;
+    }
+
+    setRoofAreaSummary(summary);
+    setRoofAreaMessage(
+      summary.ignoredRoofShapes > 0
+        ? `Area updated. Ignored ${summary.ignoredRoofShapes} unsupported roof outline(s).`
+        : `Area updated across ${summary.roofShapeCount} roof outline(s).`
+    );
+  }, [featureGroupRef]);
+
   return (
     <div className="flex h-screen bg-[#050505] font-sans text-zinc-100 overflow-hidden relative selection:bg-white/20 selection:text-white">
       {/* Background Ambience */}
@@ -265,11 +294,14 @@ export default function App() {
             onClearAll={clearAllData}
             onExport={exportGeoJson}
             onAutoDetect={runAutoDetection}
+            onCalculateSqFt={calculateSqFt}
             onAcceptDetection={acceptAutoDetection}
             onRejectDetection={rejectAutoDetection}
             isAutoDetecting={isDetecting}
             detectionPreview={detectionPreview}
             detectionMessage={detectionMessage ?? detectionError}
+            roofAreaSummary={roofAreaSummary}
+            roofAreaMessage={roofAreaMessage}
             detectionConfidenceThreshold={detectionConfidenceThreshold}
             onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
           />
