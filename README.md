@@ -1,44 +1,76 @@
-# Solar-Roof-AI Workspace
+# Solar Roof AI
 
-Monorepo-style workspace with:
-- frontend: React + Vite map workspace
-- backend: FastAPI roof detection service using OpenCV image processing
+Solar Roof AI is a portfolio project that turns rooftop imagery into an interactive solar planning workspace. It combines a polished map-based frontend with a FastAPI computer vision service so a user can search for a property, trace or auto-detect roof geometry, inspect solar suitability, estimate usable roof area, and preview panel placement in one flow.
 
-## Quick Start
+## Overview
 
-1. Install frontend dependencies
-   - `npm install --workspace frontend`
-2. Install backend dependencies
-   - `npm run backend:install`
-3. Start frontend
-   - `npm run frontend:dev`
-4. Start backend
-   - `npm run backend:dev`
+This project is designed to feel like a lightweight solar pre-sales and planning tool rather than just a demo. The experience centers around a roof-focused workspace where users can move from address lookup to roof analysis to exportable planning data with minimal friction.
 
-Frontend runs on `http://localhost:5173`.
-Backend runs on `http://localhost:8000`.
+## Key Features
 
-## Detection Endpoint
+- Address search with rooftop-focused map navigation using OpenStreetMap geocoding.
+- Dual map modes with both a standard basemap and high-zoom satellite imagery.
+- Manual roof mapping with polygons, rectangles, circles, polylines, and obstacle markers.
+- Auto roof detection from captured map imagery using a FastAPI + OpenCV backend.
+- Detection preview flow with accept/reject controls before committing AI-generated geometry.
+- Confidence-based roof and obstacle filtering for tuning detection sensitivity.
+- Roof area estimation with gross, blocked, and net usable square footage.
+- Solar heatmap overlay that blends sun exposure, seasonal sweep, and obstacle shadow impact.
+- Panel planning tools with manual stamping or automatic panel packing inside usable roof space.
+- Obstacle-aware exclusion zones so panel placement avoids blocked areas.
+- GeoJSON export for roof outlines, obstacles, and analysis-ready geometry.
 
-- `POST /api/v1/roof/detect`
-- Health check: `GET /health`
+## Product Workflow
 
-### Detection request controls
+1. Search and select a property.
+2. Open the workspace and switch into imagery view.
+3. Map the roof manually or run auto-detection on a captured satellite snapshot.
+4. Review the detected roof planes and obstacles before accepting them.
+5. Calculate usable roof area and inspect the solar exposure overlay.
+6. Lay out panels manually or auto-pack them based on available space.
+7. Export the resulting roof and obstacle data as GeoJSON.
 
-- `roof_confidence_threshold`: Minimum confidence for roof planes.
-- `obstacle_confidence_threshold`: Minimum confidence for obstacles.
-- `min_roof_area_px` / `min_obstacle_area_px`: Pixel-area filters.
-- `max_roof_planes` / `max_obstacles`: Max detections returned.
-- `min_roof_solidity` / `min_roof_rectangularity`: Shape quality filters.
+## Why This Project Is Interesting
 
-The backend currently uses an OpenCV pipeline (edge detection + contour extraction + morphology) to estimate:
-- roof plane polygons
-- obstacle points
-- slope/aspect approximations
+- It blends frontend interaction design, geospatial data handling, and backend computer vision in a single product.
+- It uses AI-assisted detection as a practical productivity feature rather than a black-box gimmick.
+- It keeps the human in control through preview, manual editing, and exportable geometry.
+- It demonstrates how solar planning concepts like setbacks, obstacle clearance, shading, and capacity estimation can be translated into an intuitive UI.
 
-Detection metadata includes:
-- input snapshot dimensions used by backend
-- filtered vs raw candidate counts
-- warning codes for low quality, truncation, and filtering outcomes
+## Tech Stack
 
-Slope values are estimation-grade from 2D imagery and should be treated as approximate.
+- Frontend: React, TypeScript, Vite, Leaflet, Turf.js, MapLibre, Tailwind-based UI styling
+- Backend: FastAPI, Python, OpenCV, NumPy, Pydantic
+- External services: OpenStreetMap Nominatim geocoding, ESRI World Imagery tiles
+
+## Backend API
+
+- `GET /health` for service health
+- `POST /api/v1/roof/detect` for roof and obstacle detection from a map snapshot
+
+The detection pipeline currently uses classical computer vision techniques such as contour extraction, filtering, and morphology to estimate roof planes, obstacles, and approximate roof orientation metadata.
+
+## Notes
+
+- Roof pitch, aspect, and solar suitability values are estimation-grade and should be treated as planning aids, not engineering outputs.
+- Auto-detection quality depends on the clarity of the source imagery and the visible roof contrast.
+- Some locations may block screenshot-based imagery capture because of tile or browser CORS restrictions, in which case the manual workflow still works.
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install --workspace frontend
+npm run backend:install
+```
+
+Run locally:
+
+```bash
+npm run frontend:dev
+npm run backend:dev
+```
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
