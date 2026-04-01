@@ -1,203 +1,196 @@
-import { Hexagon, MapPin, Menu, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Hexagon, Layers3, Map, Satellite, Search, SunMedium } from "lucide-react";
 import { Button, Input } from "@/components/ui/glass";
 import { cn } from "@/lib/utils";
-import { Coordinates, NominatimResult, ViewMode } from "@/types";
+import { NominatimResult, ViewMode } from "@/types";
 
-type MobileMenuOverlayProps = {
-  open: boolean;
-  address: string;
-  isSearching: boolean;
-  onClose: () => void;
-  onAddressChange: (value: string) => void;
-  onSearchSubmit: () => void;
-};
-
-type DesktopSidebarProps = {
+type MainHeaderProps = {
   address: string;
   isSearching: boolean;
   searchResults: NominatimResult[];
-  selectedAddress: string | null;
-  coordinates: Coordinates | null;
+  coordinates: { lat: number; lng: number } | null;
   showMapTools: boolean;
+  viewMode: ViewMode;
+  solarOverlayEnabled: boolean;
   onAddressChange: (value: string) => void;
   onSearchSubmit: () => void;
   onSelectAddress: (result: NominatimResult) => void;
   onToggleWorkspace: () => void;
-};
-
-type MainHeaderProps = {
-  viewMode: ViewMode;
-  solarOverlayEnabled: boolean;
-  onOpenMobileMenu: () => void;
   onSetViewMode: (mode: ViewMode) => void;
   onToggleSolarOverlay: () => void;
 };
 
-export function MobileMenuOverlay({
-  open,
-  address,
-  isSearching,
-  onClose,
-  onAddressChange,
-  onSearchSubmit,
-}: MobileMenuOverlayProps) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[100] md:hidden flex justify-end" onClick={onClose}>
-      <div
-        className="w-4/5 max-w-sm h-full bg-[#0a0a0a] border-l border-white/10 p-6 flex flex-col gap-6 transform transition-transform"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <h1 className="text-xl font-medium tracking-[0.2em] uppercase text-white">SolarRoof</h1>
-          <Button variant="ghost" className="!p-2" onClick={onClose}>
-            <X size={20} />
-          </Button>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <Input
-            placeholder="Search precise location..."
-            value={address}
-            onChange={(event) => onAddressChange(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && onSearchSubmit()}
-          />
-          <Button onClick={onSearchSubmit} disabled={isSearching} className="w-full">
-            {isSearching ? "Locating..." : "Find Origin"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function DesktopSidebar({
+export function MainHeader({
   address,
   isSearching,
   searchResults,
-  selectedAddress,
   coordinates,
   showMapTools,
+  viewMode,
+  solarOverlayEnabled,
   onAddressChange,
   onSearchSubmit,
   onSelectAddress,
   onToggleWorkspace,
-}: DesktopSidebarProps) {
+  onSetViewMode,
+  onToggleSolarOverlay,
+}: MainHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, [menuOpen]);
+
   return (
-    <aside className="hidden md:flex flex-col w-[340px] border-r border-white/10 bg-black/40 backdrop-blur-2xl z-20 relative p-6 gap-8 shadow-2xl">
-      <div className="absolute top-0 right-0 w-64 h-64 bg-white/[0.02] rounded-full blur-[80px] pointer-events-none" />
-
-      <header className="border-b border-white/10 pb-6 shrink-0">
-        <h1 className="text-xl font-medium text-white tracking-[0.15em] uppercase flex items-center gap-4">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 border border-white/20">
-            <Hexagon size={16} className="text-white" />
-          </div>
-          SolarRoof<span className="text-zinc-500 text-sm">.ai</span>
-        </h1>
-        <p className="text-[10px] text-zinc-500 font-medium tracking-[0.15em] mt-3 uppercase">Monochrome Workspace</p>
-      </header>
-
-      <div className="flex flex-col gap-5 shrink-0">
-        <div className="space-y-3">
-          <Input
-            placeholder="Search precise location..."
-            value={address}
-            onChange={(event) => onAddressChange(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && onSearchSubmit()}
-          />
-          <Button onClick={onSearchSubmit} disabled={isSearching} className="w-full h-12">
-            {isSearching ? "Locating..." : "Find Origin"}
-          </Button>
-        </div>
-
-        <div
-          className={cn(
-            "flex flex-col overflow-hidden transition-all duration-300 bg-white/5 border border-white/10 rounded-2xl",
-            searchResults.length > 0 ? "max-h-64 opacity-100 mt-2" : "max-h-0 opacity-0 border-transparent"
-          )}
-        >
-          <div className="overflow-y-auto custom-scrollbar">
-            {searchResults.map((result, index) => (
-              <button
-                key={`${result.lat}-${result.lon}-${index}`}
-                onClick={() => onSelectAddress(result)}
-                className="w-full text-left px-4 py-3 text-[11px] text-zinc-400 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5 last:border-0 truncate font-light tracking-wider uppercase"
-              >
-                {result.display_name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {selectedAddress && coordinates && (
-        <div className="border-t border-white/10 pt-6 flex-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
-          <div className="space-y-4">
-            <h3 className="text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-              <MapPin size={12} className="text-white" /> Selected Region
-            </h3>
-            <p className="text-sm text-zinc-300 leading-relaxed font-light">{selectedAddress}</p>
-            <div className="inline-flex items-center gap-3 text-[10px] text-zinc-400 font-mono bg-white/5 py-2 px-4 rounded-xl border border-white/10">
-              <span className="text-zinc-200">LAT {coordinates.lat.toFixed(4)}</span>
-              <span className="text-white/20">|</span>
-              <span className="text-zinc-200">LNG {coordinates.lng.toFixed(4)}</span>
+    <header className="relative z-40 border-b border-white/10 bg-black/[0.35] backdrop-blur-2xl">
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="px-4 py-4 sm:px-5 lg:px-8 xl:px-10">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3 xl:min-w-[190px]">
+            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.08] shadow-[0_16px_40px_rgba(255,255,255,0.04)]">
+              <Hexagon size={18} className="text-white" />
+              <div className="absolute inset-0 rounded-2xl border border-white/10" />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-sm font-medium uppercase tracking-[0.16em] text-white">
+                SolarRoof<span className="text-zinc-500">.ai</span>
+              </h1>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Roof mapping workspace</p>
             </div>
           </div>
 
-          <Button variant={showMapTools ? "outline" : "primary"} onClick={onToggleWorkspace} className="w-full mt-auto h-12">
-            {showMapTools ? "Disable Workspace" : "Enable Workspace"}
-          </Button>
-        </div>
-      )}
-    </aside>
-  );
-}
+          <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
+            <div className="flex w-full min-w-0 flex-col items-center gap-3 lg:flex-row lg:items-center lg:justify-center">
+              <div className="relative w-full max-w-[560px]">
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"
+                  />
+                  <Input
+                    placeholder="Search any address, landmark, or rooftop..."
+                    value={address}
+                    onChange={(event) => onAddressChange(event.target.value)}
+                    onKeyDown={(event) => event.key === "Enter" && onSearchSubmit()}
+                    className="h-11 border-white/5 bg-black/30 pl-11 pr-14"
+                  />
+                  <Button
+                    onClick={onSearchSubmit}
+                    disabled={isSearching}
+                    className="absolute right-1.5 top-1/2 h-8 w-8 -translate-y-1/2 rounded-xl px-0"
+                    aria-label={isSearching ? "Searching" : "Search"}
+                  >
+                    <Search size={14} />
+                  </Button>
+                </div>
+                <div
+                  className={cn(
+                    "absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden transition-all duration-300",
+                    searchResults.length > 0 ? "max-h-72 opacity-100" : "max-h-0 opacity-0 pointer-events-none"
+                  )}
+                >
+                  <div className="rounded-2xl border border-white/10 bg-black/[0.92] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                      {searchResults.map((result, index) => (
+                        <button
+                          key={`${result.lat}-${result.lon}-${index}`}
+                          onClick={() => onSelectAddress(result)}
+                          className="flex w-full flex-col rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white/[0.08]"
+                        >
+                          <span className="text-sm leading-relaxed text-zinc-200">{result.display_name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-export function MainHeader({ viewMode, solarOverlayEnabled, onOpenMobileMenu, onSetViewMode, onToggleSolarOverlay }: MainHeaderProps) {
-  return (
-    <header className="h-20 border-b border-white/10 bg-black/20 backdrop-blur-md flex items-center justify-between px-6 lg:px-10 sticky top-0 z-50">
-      <div className="flex items-center gap-4">
-        <button className="md:hidden" onClick={onOpenMobileMenu}>
-          <Menu size={24} className="text-white hover:text-white/80 transition-colors" />
-        </button>
-        <div className="hidden sm:flex items-center gap-2">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-40"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-          </span>
-          <span className="text-[10px] font-medium uppercase tracking-widest text-zinc-400">System Online</span>
+              <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
+                <div ref={menuRef} className="relative">
+                  <Button
+                    variant="outline"
+                    onClick={() => setMenuOpen((previous) => !previous)}
+                    className="h-11 px-3"
+                    aria-expanded={menuOpen}
+                    aria-haspopup="menu"
+                  >
+                    <Layers3 size={16} />
+                    <ChevronDown size={14} className={cn("transition-transform", menuOpen && "rotate-180")} />
+                  </Button>
+                  {menuOpen && (
+                    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-white/10 bg-black/[0.92] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetViewMode("normal");
+                          setMenuOpen(false);
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Map size={14} />
+                          Base Map
+                        </span>
+                        {viewMode === "normal" ? <Check size={14} className="text-white" /> : null}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetViewMode("satellite");
+                          setMenuOpen(false);
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Satellite size={14} />
+                          Imagery
+                        </span>
+                        {viewMode === "satellite" ? <Check size={14} className="text-white" /> : null}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onToggleSolarOverlay();
+                          setMenuOpen(false);
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5"
+                      >
+                        <span className="flex items-center gap-2">
+                          <SunMedium size={14} />
+                          Solar View
+                        </span>
+                        {solarOverlayEnabled ? <Check size={14} className="text-lime-300" /> : null}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <Button
+                  variant={showMapTools ? "outline" : "primary"}
+                  onClick={onToggleWorkspace}
+                  disabled={!coordinates}
+                  className="h-11 min-w-[132px]"
+                >
+                  {showMapTools ? "Sidebar Off" : "Sidebar On"}
+                </Button>
+              </div>
+            </div>
+            <div className="text-center text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+              {coordinates ? "Location ready. Open the sidebar only when you need tools." : "Search and select a roof to start."}
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="flex items-center gap-3 bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-xl">
-        <button
-          onClick={() => onSetViewMode("normal")}
-          className={cn(
-            "px-4 py-2 text-[10px] uppercase tracking-[0.15em] font-semibold rounded-xl transition-all duration-300",
-            viewMode === "normal" ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white hover:bg-white/5"
-          )}
-        >
-          Base
-        </button>
-        <button
-          onClick={() => onSetViewMode("satellite")}
-          className={cn(
-            "px-4 py-2 text-[10px] uppercase tracking-[0.15em] font-semibold rounded-xl transition-all duration-300",
-            viewMode === "satellite" ? "bg-white text-black shadow-lg" : "text-zinc-500 hover:text-white hover:bg-white/5"
-          )}
-        >
-          Imagery
-        </button>
-        <button
-          onClick={onToggleSolarOverlay}
-          className={cn(
-            "px-4 py-2 text-[10px] uppercase tracking-[0.15em] font-semibold rounded-xl transition-all duration-300",
-            solarOverlayEnabled ? "bg-lime-300 text-black shadow-lg" : "text-zinc-500 hover:text-white hover:bg-white/5"
-          )}
-        >
-          Solar View
-        </button>
       </div>
     </header>
   );

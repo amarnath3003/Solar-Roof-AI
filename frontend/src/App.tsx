@@ -3,7 +3,7 @@ import "./styles.css";
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
-import { DesktopSidebar, MainHeader, MobileMenuOverlay } from "@/components/Layout";
+import { MainHeader } from "@/components/Layout";
 import { WorkspaceContent } from "@/components/Workspace";
 import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
@@ -92,7 +92,6 @@ function createPlacedPanelRecord(
 }
 
 export default function App() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
   const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
   const [showMapTools, setShowMapTools] = useState(false);
@@ -111,7 +110,6 @@ export default function App() {
   const {
     address,
     setAddress,
-    selectedAddress,
     coordinates,
     searchResults,
     isSearching,
@@ -120,7 +118,6 @@ export default function App() {
   } = useAddressSearch({
     onLocationSelected: () => {
       setViewMode("normal");
-      setMobileMenuOpen(false);
     },
   });
 
@@ -367,78 +364,62 @@ export default function App() {
   }, [featureGroupRef]);
 
   return (
-    <div className="flex h-screen bg-[#050505] font-sans text-zinc-100 overflow-hidden relative selection:bg-white/20 selection:text-white">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-[#050505] font-sans text-zinc-100 selection:bg-white/20 selection:text-white">
       {/* Background Ambience */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.05)_0%,transparent_50%)] pointer-events-none z-0" />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none z-0 mix-blend-overlay" />
 
-      <MobileMenuOverlay
-        open={mobileMenuOpen}
-        address={address}
-        isSearching={isSearching}
-        onClose={() => setMobileMenuOpen(false)}
-        onAddressChange={setAddress}
-        onSearchSubmit={handleSearchSubmit}
-      />
-
-      <DesktopSidebar
+      <MainHeader
         address={address}
         isSearching={isSearching}
         searchResults={searchResults}
-        selectedAddress={selectedAddress}
         coordinates={coordinates}
         showMapTools={showMapTools}
+        viewMode={viewMode}
+        solarOverlayEnabled={solarOverlayEnabled}
         onAddressChange={setAddress}
         onSearchSubmit={handleSearchSubmit}
         onSelectAddress={selectAddress}
         onToggleWorkspace={toggleWorkspace}
+        onSetViewMode={setViewMode}
+        onToggleSolarOverlay={() => setSolarOverlayEnabled((previous) => !previous)}
       />
 
-      <main className="flex-1 flex flex-col min-w-0 z-10 relative">
-        <MainHeader
+      <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 sm:px-5 lg:px-8 lg:pb-8 lg:pt-6 xl:px-10">
+        <WorkspaceContent
+          coordinates={coordinates}
           viewMode={viewMode}
+          showMapTools={showMapTools}
+          roofElements={roofElements}
+          obstacleMarkers={obstacleMarkers}
+          mapContainerRef={mapContainerRef}
+          onClearAll={clearAllData}
+          onExport={exportGeoJson}
+          onAutoDetect={runAutoDetection}
+          onCalculateSqFt={calculateSqFt}
+          onAcceptDetection={acceptAutoDetection}
+          onRejectDetection={rejectAutoDetection}
+          isAutoDetecting={isDetecting}
+          detectionPreview={detectionPreview}
+          detectionMessage={detectionMessage ?? detectionError}
+          roofAreaSummary={roofAreaSummary}
+          roofAreaMessage={roofAreaMessage}
+          detectionConfidenceThreshold={detectionConfidenceThreshold}
+          onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
           solarOverlayEnabled={solarOverlayEnabled}
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onSetViewMode={setViewMode}
-          onToggleSolarOverlay={() => setSolarOverlayEnabled((previous) => !previous)}
+          solarHeatmap={solarHeatmap}
+          panelTypeId={panelTypeId}
+          onPanelTypeChange={setPanelTypeId}
+          panelLayoutMode={panelLayoutMode}
+          onPanelLayoutModeChange={setPanelLayoutMode}
+          onAutoPackPanels={autoPackPanelLayout}
+          onClearPanels={clearAllPanels}
+          placedPanelCount={placedPanels.length}
+          estimatedPanelKw={estimatedPanelKw}
+          panelLayoutMessage={panelLayoutMessage}
+          exclusionZoneCount={panelLayoutContext.exclusionZones.length}
+          hasPrimaryRoof={panelLayoutContext.primaryRoof !== null}
         />
-
-        <div className="flex-1 p-6 lg:p-10 overflow-hidden flex flex-col">
-          <WorkspaceContent
-            coordinates={coordinates}
-            viewMode={viewMode}
-            showMapTools={showMapTools}
-            roofElements={roofElements}
-            obstacleMarkers={obstacleMarkers}
-            mapContainerRef={mapContainerRef}
-            onClearAll={clearAllData}
-            onExport={exportGeoJson}
-            onAutoDetect={runAutoDetection}
-            onCalculateSqFt={calculateSqFt}
-            onAcceptDetection={acceptAutoDetection}
-            onRejectDetection={rejectAutoDetection}
-            isAutoDetecting={isDetecting}
-            detectionPreview={detectionPreview}
-            detectionMessage={detectionMessage ?? detectionError}
-            roofAreaSummary={roofAreaSummary}
-            roofAreaMessage={roofAreaMessage}
-            detectionConfidenceThreshold={detectionConfidenceThreshold}
-            onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
-            solarOverlayEnabled={solarOverlayEnabled}
-            solarHeatmap={solarHeatmap}
-            panelTypeId={panelTypeId}
-            onPanelTypeChange={setPanelTypeId}
-            panelLayoutMode={panelLayoutMode}
-            onPanelLayoutModeChange={setPanelLayoutMode}
-            onAutoPackPanels={autoPackPanelLayout}
-            onClearPanels={clearAllPanels}
-            placedPanelCount={placedPanels.length}
-            estimatedPanelKw={estimatedPanelKw}
-            panelLayoutMessage={panelLayoutMessage}
-            exclusionZoneCount={panelLayoutContext.exclusionZones.length}
-            hasPrimaryRoof={panelLayoutContext.primaryRoof !== null}
-          />
-        </div>
       </main>
     </div>
   );
