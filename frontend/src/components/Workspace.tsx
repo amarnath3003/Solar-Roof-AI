@@ -3,7 +3,6 @@ import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, 
 import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
-import { SunProjection, SunProjectionSeason, getSunSeasonLabel } from "@/lib/sunProjection";
 import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
 type WorkspaceContentProps = {
@@ -26,12 +25,7 @@ type WorkspaceContentProps = {
   roofAreaMessage: string | null;
   detectionConfidenceThreshold: number;
   onDetectionConfidenceThresholdChange: (next: number) => void;
-  showSunPathControls: boolean;
-  sunProjection: SunProjection | null;
-  sunTimeOfDay: number;
-  onSunTimeOfDayChange: (next: number) => void;
-  sunSeason: SunProjectionSeason;
-  onSunSeasonChange: (next: SunProjectionSeason) => void;
+  solarOverlayEnabled: boolean;
   solarHeatmap: SolarHeatmap | null;
 };
 
@@ -41,131 +35,45 @@ function formatSqFt(value: number) {
   }).format(value);
 }
 
-function formatDegrees(value: number) {
-  return `${value.toFixed(1)}deg`;
-}
-
-function SunPathProjectionPanel({
-  sunProjection,
-  sunTimeOfDay,
-  onSunTimeOfDayChange,
-  sunSeason,
-  onSunSeasonChange,
-  solarHeatmap,
-}: {
-  sunProjection: SunProjection;
-  sunTimeOfDay: number;
-  onSunTimeOfDayChange: (next: number) => void;
-  sunSeason: SunProjectionSeason;
-  onSunSeasonChange: (next: SunProjectionSeason) => void;
-  solarHeatmap: SolarHeatmap | null;
-}) {
-  const seasons: SunProjectionSeason[] = ["summer-solstice", "winter-solstice"];
-
+function SolarOverlayPanel({ solarHeatmap }: { solarHeatmap: SolarHeatmap }) {
   return (
     <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4 flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-[0.15em] text-amber-200">Sun Path Projection</div>
-          <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/70 leading-relaxed">
-            Live azimuth ray from the latest roof footprint center
-          </div>
-        </div>
-        <div className="rounded-full border border-amber-200/20 bg-black/30 px-3 py-1 text-[10px] uppercase tracking-[0.15em] text-amber-100">
-          {sunProjection.timeLabel}
+      <div className="space-y-1">
+        <div className="text-[10px] uppercase tracking-[0.15em] text-amber-200">Solar View</div>
+        <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/70 leading-relaxed">
+          Estimated gradient overlay for best panel placement on the active roof
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {seasons.map((season) => {
-          const selected = sunSeason === season;
-          return (
-            <button
-              key={season}
-              type="button"
-              onClick={() => onSunSeasonChange(season)}
-              className={`rounded-xl border px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition-colors ${
-                selected
-                  ? "border-amber-200/40 bg-amber-200/15 text-amber-50"
-                  : "border-white/10 bg-black/20 text-zinc-300 hover:border-amber-200/20 hover:text-amber-100"
-              }`}
-            >
-              {getSunSeasonLabel(season)}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-zinc-300">
-          <span>Time of Day</span>
-          <span>{sunProjection.timeLabel}</span>
+      <div className="rounded-xl border border-white/10 bg-black/25 p-3 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-300">Roof Gradient</div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-lime-200">{solarHeatmap.bestZoneLabel}</div>
         </div>
-        <input
-          type="range"
-          min={6}
-          max={18}
-          step={0.25}
-          value={sunTimeOfDay}
-          onChange={(event) => onSunTimeOfDayChange(Number(event.target.value))}
-          className="w-full accent-amber-300"
-        />
+        <div className="h-2 rounded-full bg-gradient-to-r from-sky-700 via-amber-400 to-lime-400" />
         <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-zinc-500">
-          <span>6:00 AM</span>
-          <span>12:00 PM</span>
-          <span>6:00 PM</span>
+          <span>Lower Suitability</span>
+          <span>Higher Suitability</span>
         </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Average Score</div>
+            <div className="text-sm text-white">{solarHeatmap.averageExposurePercent}%</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Best Zone</div>
+            <div className="text-sm text-white">{solarHeatmap.peakExposurePercent}%</div>
+          </div>
+        </div>
+        <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/75 leading-relaxed">
+          Gradient blends long-duration exposure, seasonal sun sweep, and obstacle shadow impact into one roof overlay.
+        </div>
+        {solarHeatmap.isUniform && (
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
+            This roof still reads fairly even, so the overlay is intentionally softer.
+          </div>
+        )}
       </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-          <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Azimuth</div>
-          <div className="text-sm text-white">{formatDegrees(sunProjection.azimuthDegrees)}</div>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-          <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Altitude</div>
-          <div className="text-sm text-white">{formatDegrees(sunProjection.altitudeDegrees)}</div>
-        </div>
-      </div>
-
-      <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/75 leading-relaxed">
-        {sunProjection.isAboveHorizon
-          ? `Ray extends 50 m toward ${Math.round(sunProjection.azimuthDegrees)}deg for the selected solstice snapshot.`
-          : "Sun is below the horizon for this snapshot. The ray remains visible as a directional cue."}
-      </div>
-
-      {solarHeatmap && (
-        <div className="rounded-xl border border-white/10 bg-black/25 p-3 flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-300">Daily Solar Heat Map</div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-lime-200">{solarHeatmap.bestZoneLabel}</div>
-          </div>
-          <div className="h-2 rounded-full bg-gradient-to-r from-blue-700 via-amber-400 to-lime-400" />
-          <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-zinc-500">
-            <span>Less Sun Time</span>
-            <span>More Sun Time</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-              <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Average Exposure</div>
-              <div className="text-sm text-white">{solarHeatmap.averageExposurePercent}%</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-              <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-400">Best Cells</div>
-              <div className="text-sm text-white">{solarHeatmap.peakExposurePercent}%</div>
-            </div>
-          </div>
-          <div className="text-[10px] uppercase tracking-[0.14em] text-amber-100/75 leading-relaxed">
-            Heat colors accumulate unshadowed sunlight across the full {getSunSeasonLabel(sunSeason).toLowerCase()}
-            {" "}day. The time slider still previews the live sun direction ray.
-          </div>
-          {solarHeatmap.isUniform && (
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
-              Exposure is fairly even across this roof with the current footprint and obstacle data.
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -230,12 +138,7 @@ function WorkspaceDataPanel({
   roofAreaMessage,
   detectionConfidenceThreshold,
   onDetectionConfidenceThresholdChange,
-  showSunPathControls,
-  sunProjection,
-  sunTimeOfDay,
-  onSunTimeOfDayChange,
-  sunSeason,
-  onSunSeasonChange,
+  solarOverlayEnabled,
   solarHeatmap,
 }: {
   roofElements: RoofElement[];
@@ -253,12 +156,7 @@ function WorkspaceDataPanel({
   roofAreaMessage: string | null;
   detectionConfidenceThreshold: number;
   onDetectionConfidenceThresholdChange: (next: number) => void;
-  showSunPathControls: boolean;
-  sunProjection: SunProjection | null;
-  sunTimeOfDay: number;
-  onSunTimeOfDayChange: (next: number) => void;
-  sunSeason: SunProjectionSeason;
-  onSunSeasonChange: (next: SunProjectionSeason) => void;
+  solarOverlayEnabled: boolean;
   solarHeatmap: SolarHeatmap | null;
 }) {
   return (
@@ -320,15 +218,8 @@ function WorkspaceDataPanel({
           </Button>
         </div>
 
-        {showSunPathControls && sunProjection && (
-          <SunPathProjectionPanel
-            sunProjection={sunProjection}
-            sunTimeOfDay={sunTimeOfDay}
-            onSunTimeOfDayChange={onSunTimeOfDayChange}
-            sunSeason={sunSeason}
-            onSunSeasonChange={onSunSeasonChange}
-            solarHeatmap={solarHeatmap}
-          />
+        {solarOverlayEnabled && solarHeatmap && (
+          <SolarOverlayPanel solarHeatmap={solarHeatmap} />
         )}
 
         {(roofAreaSummary || roofAreaMessage) && (
@@ -452,12 +343,7 @@ export function WorkspaceContent({
   roofAreaMessage,
   detectionConfidenceThreshold,
   onDetectionConfidenceThresholdChange,
-  showSunPathControls,
-  sunProjection,
-  sunTimeOfDay,
-  onSunTimeOfDayChange,
-  sunSeason,
-  onSunSeasonChange,
+  solarOverlayEnabled,
   solarHeatmap,
 }: WorkspaceContentProps) {
   if (!coordinates) {
@@ -484,12 +370,7 @@ export function WorkspaceContent({
           roofAreaMessage={roofAreaMessage}
           detectionConfidenceThreshold={detectionConfidenceThreshold}
           onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
-          showSunPathControls={showSunPathControls}
-          sunProjection={sunProjection}
-          sunTimeOfDay={sunTimeOfDay}
-          onSunTimeOfDayChange={onSunTimeOfDayChange}
-          sunSeason={sunSeason}
-          onSunSeasonChange={onSunSeasonChange}
+          solarOverlayEnabled={solarOverlayEnabled}
           solarHeatmap={solarHeatmap}
         />
       )}

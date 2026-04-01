@@ -11,7 +11,7 @@ import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
-import { SunProjectionSeason, calculateSunProjection, getActiveRoofFootprint } from "@/lib/sunProjection";
+import { getActiveRoofFootprint } from "@/lib/sunProjection";
 import "@/styles/leaflet-custom.css";
 import { AutoRoofDetectionResult, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
 
@@ -79,8 +79,7 @@ export default function App() {
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
   const [roofAreaSummary, setRoofAreaSummary] = useState<RoofAreaSummary | null>(null);
   const [roofAreaMessage, setRoofAreaMessage] = useState<string | null>(null);
-  const [sunTimeOfDay, setSunTimeOfDay] = useState(12);
-  const [sunSeason, setSunSeason] = useState<SunProjectionSeason>("summer-solstice");
+  const [solarOverlayEnabled, setSolarOverlayEnabled] = useState(false);
 
   const {
     address,
@@ -106,25 +105,14 @@ export default function App() {
   } = useAutoRoofDetection();
 
   const activeRoofFootprint = getActiveRoofFootprint(roofElements);
-  const sunProjection = useMemo(
-    () =>
-      activeRoofFootprint
-        ? calculateSunProjection(activeRoofFootprint, {
-            season: sunSeason,
-            timeOfDay: sunTimeOfDay,
-          })
-        : null,
-    [activeRoofFootprint, sunSeason, sunTimeOfDay]
-  );
   const solarHeatmap = useMemo(
     () =>
-      activeRoofFootprint
+      activeRoofFootprint && solarOverlayEnabled
         ? calculateSolarHeatmap(activeRoofFootprint, {
-            season: sunSeason,
             obstacleMarkers,
           })
         : null,
-    [activeRoofFootprint, obstacleMarkers, sunSeason]
+    [activeRoofFootprint, obstacleMarkers, solarOverlayEnabled]
   );
 
   const {
@@ -140,7 +128,6 @@ export default function App() {
     showMapTools,
     setRoofElements,
     setObstacleMarkers,
-    sunProjection,
     solarHeatmap
   );
 
@@ -307,8 +294,10 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 z-10 relative">
         <MainHeader
           viewMode={viewMode}
+          solarOverlayEnabled={solarOverlayEnabled}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onSetViewMode={setViewMode}
+          onToggleSolarOverlay={() => setSolarOverlayEnabled((previous) => !previous)}
         />
 
         <div className="flex-1 p-6 lg:p-10 overflow-hidden flex flex-col">
@@ -332,12 +321,7 @@ export default function App() {
             roofAreaMessage={roofAreaMessage}
             detectionConfidenceThreshold={detectionConfidenceThreshold}
             onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
-            showSunPathControls={Boolean(activeRoofFootprint)}
-            sunProjection={sunProjection}
-            sunTimeOfDay={sunTimeOfDay}
-            onSunTimeOfDayChange={setSunTimeOfDay}
-            sunSeason={sunSeason}
-            onSunSeasonChange={setSunSeason}
+            solarOverlayEnabled={solarOverlayEnabled}
             solarHeatmap={solarHeatmap}
           />
         </div>
