@@ -9,11 +9,21 @@ import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
+import { autoPackPanels, buildPanelLayoutContext, getPanelTypeDefinition, validatePanelPlacement } from "@/lib/panelLayout";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
 import { getActiveRoofFootprint } from "@/lib/sunProjection";
 import "@/styles/leaflet-custom.css";
-import { AutoRoofDetectionResult, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
+import {
+  AutoRoofDetectionResult,
+  ObstacleMarker,
+  PanelLayoutMode,
+  PanelTypeId,
+  PlacedPanel,
+  RoofAreaSummary,
+  RoofElement,
+  ViewMode,
+} from "@/types";
 
 function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: ObstacleMarker[]) {
   const featureCollection: GeoJSON.FeatureCollection = {
@@ -68,6 +78,19 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function createPlacedPanelRecord(
+  feature: GeoJSON.Feature<GeoJSON.Polygon>,
+  panelTypeId: PanelTypeId,
+  source: "manual" | "auto"
+): PlacedPanel {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    panelTypeId,
+    source,
+    feature,
+  };
+}
+
 export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
@@ -80,6 +103,10 @@ export default function App() {
   const [roofAreaSummary, setRoofAreaSummary] = useState<RoofAreaSummary | null>(null);
   const [roofAreaMessage, setRoofAreaMessage] = useState<string | null>(null);
   const [solarOverlayEnabled, setSolarOverlayEnabled] = useState(false);
+  const [panelTypeId, setPanelTypeId] = useState<PanelTypeId>("standard-residential");
+  const [panelLayoutMode, setPanelLayoutMode] = useState<PanelLayoutMode>("auto");
+  const [placedPanels, setPlacedPanels] = useState<PlacedPanel[]>([]);
+  const [panelLayoutMessage, setPanelLayoutMessage] = useState<string | null>(null);
 
   const {
     address,
@@ -105,6 +132,12 @@ export default function App() {
   } = useAutoRoofDetection();
 
   const activeRoofFootprint = getActiveRoofFootprint(roofElements);
+  const panelLayoutContext = useMemo(() => buildPanelLayoutContext(roofElements), [roofElements]);
+  const selectedPanelType = useMemo(() => getPanelTypeDefinition(panelTypeId), [panelTypeId]);
+  const estimatedPanelKw = useMemo(
+    () => Number((placedPanels.length * selectedPanelType.kw).toFixed(1)),
+    [placedPanels.length, selectedPanelType.kw]
+  );
   const solarHeatmap = useMemo(
     () =>
       activeRoofFootprint && solarOverlayEnabled
@@ -113,6 +146,18 @@ export default function App() {
           })
         : null,
     [activeRoofFootprint, obstacleMarkers, solarOverlayEnabled]
+  );
+
+  const handlePlaceManualPanel = useCallback(
+    (feature: GeoJSON.Feature<GeoJSON.Polygon>) => {
+      if (!validatePanelPlacement(feature, panelLayoutContext, placedPanels.map((panel) => panel.feature)).isValid) {
+        return;
+      }
+
+      setPlacedPanels((previous) => [...previous, createPlacedPanelRecord(feature, panelTypeId, "manual")]);
+      setPanelLayoutMessage("Manual panel stamped into the current usable roof area.");
+    },
+    [panelLayoutContext, panelTypeId, placedPanels]
   );
 
   const {
@@ -128,7 +173,14 @@ export default function App() {
     showMapTools,
     setRoofElements,
     setObstacleMarkers,
-    solarHeatmap
+    solarHeatmap,
+    {
+      context: panelLayoutContext,
+      mode: panelLayoutMode,
+      selectedPanelTypeId: panelTypeId,
+      placedPanels,
+      onPlacePanel: handlePlaceManualPanel,
+    }
   );
 
   useEffect(() => {
@@ -136,6 +188,8 @@ export default function App() {
     setDetectionMessage(null);
     setRoofAreaSummary(null);
     setRoofAreaMessage(null);
+    setPlacedPanels([]);
+    setPanelLayoutMessage(null);
     clearDetectionPreview();
     clearDetectionError();
   }, [coordinates, clearDetectionError, clearDetectionPreview]);
@@ -144,6 +198,15 @@ export default function App() {
     setRoofAreaSummary(null);
     setRoofAreaMessage(null);
   }, [roofElements, obstacleMarkers]);
+
+  useEffect(() => {
+    if (placedPanels.length === 0) {
+      return;
+    }
+
+    setPlacedPanels([]);
+    setPanelLayoutMessage("Roof geometry changed. Panel layout cleared so you can repack it against the new boundaries.");
+  }, [roofElements]);
 
   const toggleWorkspace = () => {
     setShowMapTools((previous) => {
@@ -165,11 +228,45 @@ export default function App() {
     setRoofAreaMessage(null);
     setRoofElements([]);
     setObstacleMarkers([]);
+    setPlacedPanels([]);
+    setPanelLayoutMessage(null);
   };
 
   const exportGeoJson = () => {
     downloadRoofData(roofElements, obstacleMarkers);
   };
+
+  const autoPackPanelLayout = useCallback(() => {
+    setPanelLayoutMode("auto");
+
+    if (!panelLayoutContext.primaryRoof) {
+      setPanelLayoutMessage("Draw one primary roof polygon first, then add any inner lines or shapes as exclusion zones.");
+      return;
+    }
+
+    if (panelLayoutContext.edgeBufferMeters > 0 && !panelLayoutContext.usableRoof) {
+      setPlacedPanels([]);
+      setPanelLayoutMessage("The current edge buffer removes all usable roof area. Reduce the setback before packing.");
+      return;
+    }
+
+    const { panels } = autoPackPanels(panelLayoutContext, panelTypeId);
+    setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
+
+    if (panels.length === 0) {
+      setPanelLayoutMessage("No valid panel placements were found inside the roof after exclusions and edge checks.");
+      return;
+    }
+
+    setPanelLayoutMessage(
+      `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s).`
+    );
+  }, [panelLayoutContext, panelTypeId]);
+
+  const clearAllPanels = useCallback(() => {
+    setPlacedPanels([]);
+    setPanelLayoutMessage("Panel layout cleared.");
+  }, []);
 
   const runAutoDetection = useCallback(async () => {
     if (!coordinates || !mapRef.current || !mapContainerRef.current) {
@@ -323,6 +420,17 @@ export default function App() {
             onDetectionConfidenceThresholdChange={setDetectionConfidenceThreshold}
             solarOverlayEnabled={solarOverlayEnabled}
             solarHeatmap={solarHeatmap}
+            panelTypeId={panelTypeId}
+            onPanelTypeChange={setPanelTypeId}
+            panelLayoutMode={panelLayoutMode}
+            onPanelLayoutModeChange={setPanelLayoutMode}
+            onAutoPackPanels={autoPackPanelLayout}
+            onClearPanels={clearAllPanels}
+            placedPanelCount={placedPanels.length}
+            estimatedPanelKw={estimatedPanelKw}
+            panelLayoutMessage={panelLayoutMessage}
+            exclusionZoneCount={panelLayoutContext.exclusionZones.length}
+            hasPrimaryRoof={panelLayoutContext.primaryRoof !== null}
           />
         </div>
       </main>

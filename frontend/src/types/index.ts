@@ -1,5 +1,13 @@
 export type ViewMode = "normal" | "satellite";
 export type ElementSource = "manual" | "auto-detected";
+export type PanelLayoutMode = "manual" | "auto";
+export type PanelPlacementSource = "manual" | "auto";
+export type PanelTypeId = "standard-residential" | "large-commercial";
+export type ExclusionZoneGeometry =
+  | GeoJSON.Polygon
+  | GeoJSON.MultiPolygon
+  | GeoJSON.LineString
+  | GeoJSON.MultiLineString;
 
 export interface Coordinates {
   lat: number;
@@ -39,6 +47,28 @@ export interface ObstacleMarker {
   source: ElementSource;
   confidence?: number;
   estimatedHeightM?: number;
+}
+
+export interface PanelTypeDefinition {
+  id: PanelTypeId;
+  label: string;
+  widthM: number;
+  heightM: number;
+  kw: number;
+}
+
+export interface PlacedPanel {
+  id: string;
+  panelTypeId: PanelTypeId;
+  source: PanelPlacementSource;
+  feature: GeoJSON.Feature<GeoJSON.Polygon>;
+}
+
+export interface PanelLayoutContext {
+  primaryRoof: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null;
+  exclusionZones: GeoJSON.Feature<ExclusionZoneGeometry>[];
+  usableRoof: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null;
+  edgeBufferMeters: number;
 }
 
 export interface DetectionBounds {

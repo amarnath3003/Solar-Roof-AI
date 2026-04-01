@@ -2,8 +2,18 @@ import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
 import { Map } from "@/components/ui/map";
 import { Button, Card } from "@/components/ui/glass";
+import { PANEL_TYPES } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
-import { AutoRoofDetectionResult, Coordinates, ObstacleMarker, RoofAreaSummary, RoofElement, ViewMode } from "@/types";
+import {
+  AutoRoofDetectionResult,
+  Coordinates,
+  ObstacleMarker,
+  PanelLayoutMode,
+  PanelTypeId,
+  RoofAreaSummary,
+  RoofElement,
+  ViewMode,
+} from "@/types";
 
 type WorkspaceContentProps = {
   coordinates: Coordinates | null;
@@ -27,6 +37,17 @@ type WorkspaceContentProps = {
   onDetectionConfidenceThresholdChange: (next: number) => void;
   solarOverlayEnabled: boolean;
   solarHeatmap: SolarHeatmap | null;
+  panelTypeId: PanelTypeId;
+  onPanelTypeChange: (next: PanelTypeId) => void;
+  panelLayoutMode: PanelLayoutMode;
+  onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
+  onAutoPackPanels: () => void;
+  onClearPanels: () => void;
+  placedPanelCount: number;
+  estimatedPanelKw: number;
+  panelLayoutMessage: string | null;
+  exclusionZoneCount: number;
+  hasPrimaryRoof: boolean;
 };
 
 function formatSqFt(value: number) {
@@ -122,6 +143,130 @@ function MapViewport({
   );
 }
 
+function PanelLayoutPanel({
+  panelTypeId,
+  onPanelTypeChange,
+  panelLayoutMode,
+  onPanelLayoutModeChange,
+  onAutoPackPanels,
+  onClearPanels,
+  placedPanelCount,
+  estimatedPanelKw,
+  panelLayoutMessage,
+  exclusionZoneCount,
+  hasPrimaryRoof,
+}: {
+  panelTypeId: PanelTypeId;
+  onPanelTypeChange: (next: PanelTypeId) => void;
+  panelLayoutMode: PanelLayoutMode;
+  onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
+  onAutoPackPanels: () => void;
+  onClearPanels: () => void;
+  placedPanelCount: number;
+  estimatedPanelKw: number;
+  panelLayoutMessage: string | null;
+  exclusionZoneCount: number;
+  hasPrimaryRoof: boolean;
+}) {
+  return (
+    <Card className="flex flex-col gap-5">
+      <h3 className="text-xs uppercase tracking-[0.2em] font-medium text-zinc-400 flex items-center gap-2">
+        <Square size={14} className="text-white" /> Panel Layout
+      </h3>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 flex flex-col gap-3">
+        <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Panel Type</div>
+        <select
+          value={panelTypeId}
+          onChange={(event) => onPanelTypeChange(event.target.value as PanelTypeId)}
+          className="h-11 rounded-xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none transition focus:border-cyan-300/40"
+        >
+          {Object.values(PANEL_TYPES).map((panelType) => (
+            <option key={panelType.id} value={panelType.id} className="bg-zinc-950 text-white">
+              {panelType.label} ({panelType.heightM}m x {panelType.widthM}m)
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Mode</div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-cyan-200">
+            {panelLayoutMode === "manual" ? "Manual Stamp" : "Auto-Pack"}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-1">
+          <button
+            type="button"
+            onClick={() => onPanelLayoutModeChange("manual")}
+            className={`rounded-xl px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition ${
+              panelLayoutMode === "manual"
+                ? "bg-emerald-400/20 text-emerald-100 border border-emerald-300/35"
+                : "text-zinc-400 border border-transparent hover:text-white hover:bg-white/5"
+            }`}
+          >
+            Manual Stamp
+          </button>
+          <button
+            type="button"
+            onClick={() => onPanelLayoutModeChange("auto")}
+            className={`rounded-xl px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition ${
+              panelLayoutMode === "auto"
+                ? "bg-cyan-400/20 text-cyan-100 border border-cyan-300/35"
+                : "text-zinc-400 border border-transparent hover:text-white hover:bg-white/5"
+            }`}
+          >
+            Auto-Pack
+          </button>
+        </div>
+        <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
+          {panelLayoutMode === "manual"
+            ? "Move across the satellite map to preview a live green or red panel stamp before clicking to place it."
+            : "Generate a panel grid inside the main roof while avoiding inner lines, shapes, and the roof edge buffer."}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Total Panels Placed</div>
+          <div className="mt-2 text-2xl font-light text-white">{placedPanelCount}</div>
+        </div>
+        <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-sky-200">Estimated kW</div>
+          <div className="mt-2 text-2xl font-light text-white">{estimatedPanelKw.toFixed(1)}</div>
+        </div>
+      </div>
+
+      <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
+        {hasPrimaryRoof
+          ? `Primary roof ready with ${exclusionZoneCount} exclusion zone(s) intersecting it.`
+          : "Draw one main roof polygon first, then add smaller inner lines or shapes to create exclusion zones."}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <Button variant="primary" className="w-full" onClick={onAutoPackPanels} disabled={!hasPrimaryRoof}>
+          <Square size={14} /> Auto-Pack Panels
+        </Button>
+        <Button
+          variant="ghost"
+          className="w-full border border-transparent hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-300 text-red-400"
+          onClick={onClearPanels}
+          disabled={placedPanelCount === 0}
+        >
+          <Trash2 size={14} /> Clear All Panels
+        </Button>
+      </div>
+
+      {panelLayoutMessage && (
+        <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-[10px] uppercase tracking-[0.12em] text-sky-100 leading-relaxed">
+          {panelLayoutMessage}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function WorkspaceDataPanel({
   roofElements,
   obstacleMarkers,
@@ -140,6 +285,17 @@ function WorkspaceDataPanel({
   onDetectionConfidenceThresholdChange,
   solarOverlayEnabled,
   solarHeatmap,
+  panelTypeId,
+  onPanelTypeChange,
+  panelLayoutMode,
+  onPanelLayoutModeChange,
+  onAutoPackPanels,
+  onClearPanels,
+  placedPanelCount,
+  estimatedPanelKw,
+  panelLayoutMessage,
+  exclusionZoneCount,
+  hasPrimaryRoof,
 }: {
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
@@ -158,6 +314,17 @@ function WorkspaceDataPanel({
   onDetectionConfidenceThresholdChange: (next: number) => void;
   solarOverlayEnabled: boolean;
   solarHeatmap: SolarHeatmap | null;
+  panelTypeId: PanelTypeId;
+  onPanelTypeChange: (next: PanelTypeId) => void;
+  panelLayoutMode: PanelLayoutMode;
+  onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
+  onAutoPackPanels: () => void;
+  onClearPanels: () => void;
+  placedPanelCount: number;
+  estimatedPanelKw: number;
+  panelLayoutMessage: string | null;
+  exclusionZoneCount: number;
+  hasPrimaryRoof: boolean;
 }) {
   return (
     <div className="w-full lg:w-72 flex flex-col gap-6 shrink-0 animate-fade-in-up mt-6 lg:mt-0">
@@ -290,12 +457,26 @@ function WorkspaceDataPanel({
         )}
       </Card>
 
+      <PanelLayoutPanel
+        panelTypeId={panelTypeId}
+        onPanelTypeChange={onPanelTypeChange}
+        panelLayoutMode={panelLayoutMode}
+        onPanelLayoutModeChange={onPanelLayoutModeChange}
+        onAutoPackPanels={onAutoPackPanels}
+        onClearPanels={onClearPanels}
+        placedPanelCount={placedPanelCount}
+        estimatedPanelKw={estimatedPanelKw}
+        panelLayoutMessage={panelLayoutMessage}
+        exclusionZoneCount={exclusionZoneCount}
+        hasPrimaryRoof={hasPrimaryRoof}
+      />
+
       <Card className="flex-1 flex flex-col gap-4">
         <h3 className="text-xs uppercase tracking-[0.2em] font-medium text-zinc-400 flex items-center gap-2">
           <Monitor size={14} className="text-white" /> Log
         </h3>
         <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-4 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-          {roofElements.length === 0 && obstacleMarkers.length === 0 ? (
+          {roofElements.length === 0 && obstacleMarkers.length === 0 && placedPanelCount === 0 ? (
             <div className="m-auto text-zinc-600 text-[10px] uppercase tracking-widest text-center">No entities drawn</div>
           ) : (
             <>
@@ -313,6 +494,14 @@ function WorkspaceDataPanel({
                   className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-lg flex items-center gap-2 tracking-wide font-mono border border-white/5"
                 >
                   <Circle size={10} className="text-white/60" /> MKR #{marker.id.toString().slice(-4)} {marker.source === "auto-detected" ? "AI" : "MAN"}
+                </div>
+              ))}
+              {Array.from({ length: placedPanelCount }).map((_, index) => (
+                <div
+                  key={`panel-${index}`}
+                  className="text-[10px] text-zinc-300 bg-blue-500/10 p-2 rounded-lg flex items-center gap-2 tracking-wide font-mono border border-blue-300/15"
+                >
+                  <Square size={10} className="text-blue-100/80" /> PNL #{(index + 1).toString().padStart(3, "0")}
                 </div>
               ))}
             </>
@@ -345,6 +534,17 @@ export function WorkspaceContent({
   onDetectionConfidenceThresholdChange,
   solarOverlayEnabled,
   solarHeatmap,
+  panelTypeId,
+  onPanelTypeChange,
+  panelLayoutMode,
+  onPanelLayoutModeChange,
+  onAutoPackPanels,
+  onClearPanels,
+  placedPanelCount,
+  estimatedPanelKw,
+  panelLayoutMessage,
+  exclusionZoneCount,
+  hasPrimaryRoof,
 }: WorkspaceContentProps) {
   if (!coordinates) {
     return <EmptyState />;
@@ -372,6 +572,17 @@ export function WorkspaceContent({
           onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
           solarOverlayEnabled={solarOverlayEnabled}
           solarHeatmap={solarHeatmap}
+          panelTypeId={panelTypeId}
+          onPanelTypeChange={onPanelTypeChange}
+          panelLayoutMode={panelLayoutMode}
+          onPanelLayoutModeChange={onPanelLayoutModeChange}
+          onAutoPackPanels={onAutoPackPanels}
+          onClearPanels={onClearPanels}
+          placedPanelCount={placedPanelCount}
+          estimatedPanelKw={estimatedPanelKw}
+          panelLayoutMessage={panelLayoutMessage}
+          exclusionZoneCount={exclusionZoneCount}
+          hasPrimaryRoof={hasPrimaryRoof}
         />
       )}
     </div>

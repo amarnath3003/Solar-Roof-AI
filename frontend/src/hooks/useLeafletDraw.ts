@@ -1,8 +1,27 @@
 import { useCallback, useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet-draw";
+import { circle as turfCircle } from "@turf/turf";
+import { createPanelFeatureAtCenter, validatePanelPlacement } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
-import { AutoRoofDetectionResult, Coordinates, RoofElement, ObstacleMarker } from "@/types";
+import {
+  AutoRoofDetectionResult,
+  Coordinates,
+  ObstacleMarker,
+  PanelLayoutContext,
+  PanelLayoutMode,
+  PanelTypeId,
+  PlacedPanel,
+  RoofElement,
+} from "@/types";
+
+type PanelInteractionConfig = {
+  context: PanelLayoutContext;
+  mode: PanelLayoutMode;
+  selectedPanelTypeId: PanelTypeId;
+  placedPanels: PlacedPanel[];
+  onPlacePanel: (feature: GeoJSON.Feature<GeoJSON.Polygon>) => void;
+};
 
 function createObstacleIcon() {
   return L.divIcon({
@@ -24,38 +43,82 @@ function toLatLngRing(ring: number[][]): L.LatLngExpression[] {
   return normalizedRing.map((point) => [point[1], point[0]] as [number, number]);
 }
 
+function hasActiveDrawTool(map: L.Map) {
+  return Boolean(map.getContainer().querySelector(".leaflet-draw-toolbar a.leaflet-draw-toolbar-button-enabled"));
+}
+
+function serializeLayerToGeoJSON(layer: L.Layer): GeoJSON.Feature {
+  if (layer instanceof L.Circle) {
+    const position = layer.getLatLng();
+    return turfCircle([position.lng, position.lat], layer.getRadius() / 1000, {
+      units: "kilometers",
+      steps: 48,
+    }) as GeoJSON.Feature<GeoJSON.Polygon>;
+  }
+
+  return (layer as L.Polygon | L.Polyline | L.Marker).toGeoJSON() as GeoJSON.Feature;
+}
+
+function createManualPreviewStyle(isValid: boolean): L.PathOptions {
+  return isValid
+    ? {
+        color: "#bbf7d0",
+        weight: 2,
+        opacity: 0.95,
+        fillColor: "#16a34a",
+        fillOpacity: 0.25,
+        dashArray: "5, 4",
+        interactive: false,
+        bubblingMouseEvents: false,
+      }
+    : {
+        color: "#fecaca",
+        weight: 2,
+        opacity: 0.95,
+        fillColor: "#dc2626",
+        fillOpacity: 0.28,
+        dashArray: "5, 4",
+        interactive: false,
+        bubblingMouseEvents: false,
+      };
+}
+
 export function useLeafletDraw(
   coordinates: Coordinates | null,
   viewMode: "normal" | "satellite",
   showMapTools: boolean,
   setRoofElements: React.Dispatch<React.SetStateAction<RoofElement[]>>,
   setObstacleMarkers: React.Dispatch<React.SetStateAction<ObstacleMarker[]>>,
-  solarHeatmap: SolarHeatmap | null
+  solarHeatmap: SolarHeatmap | null,
+  panelInteraction: PanelInteractionConfig
 ) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const heatmapGroupRef = useRef<L.FeatureGroup | null>(null);
+  const panelGroupRef = useRef<L.FeatureGroup | null>(null);
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
   const previewGroupRef = useRef<L.FeatureGroup | null>(null);
+  const manualPreviewGroupRef = useRef<L.FeatureGroup | null>(null);
   const drawControlRef = useRef<L.Control | null>(null);
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
+  const { context, mode, selectedPanelTypeId, placedPanels, onPlacePanel } = panelInteraction;
 
   const getGeometryType = (layer: L.Layer) => {
-    if (layer instanceof L.Polygon) return "polygon";
     if (layer instanceof L.Rectangle) return "rectangle";
     if (layer instanceof L.Circle) return "circle";
+    if (layer instanceof L.Polygon) return "polygon";
     if (layer instanceof L.Polyline) return "polyline";
     if (layer instanceof L.Marker) return "marker";
     return "unknown";
   };
 
-  const handleDrawCreated = useCallback((e: any) => {
+  const handleDrawCreated = useCallback((e: { layerType: string; layer: L.Layer }) => {
     if (!featureGroupRef.current) return;
     const { layerType, layer } = e;
     featureGroupRef.current.addLayer(layer);
     const id = featureGroupRef.current.getLayerId(layer);
 
-    if (layerType === "marker") {
+    if (layerType === "marker" && layer instanceof L.Marker) {
       const position = layer.getLatLng();
       setObstacleMarkers((prev) => [
         ...prev,
@@ -72,7 +135,7 @@ export function useLeafletDraw(
       return;
     }
 
-    const geoJSON = layer.toGeoJSON();
+    const geoJSON = serializeLayerToGeoJSON(layer);
     setRoofElements((prev) => [
       ...prev,
       {
@@ -86,7 +149,7 @@ export function useLeafletDraw(
     ]);
   }, [setObstacleMarkers, setRoofElements]);
 
-  const handleDrawEdited = useCallback((e: any) => {
+  const handleDrawEdited = useCallback((e: { layers: L.LayerGroup }) => {
     if (!featureGroupRef.current) return;
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
@@ -98,12 +161,12 @@ export function useLeafletDraw(
         return;
       }
       setRoofElements((prev) =>
-        prev.map((el) => (el.layerId === id ? { ...el, geoJSON: (layer as any).toGeoJSON() as GeoJSON.Feature } : el))
+        prev.map((el) => (el.layerId === id ? { ...el, geoJSON: serializeLayerToGeoJSON(layer) } : el))
       );
     });
   }, [setObstacleMarkers, setRoofElements]);
 
-  const handleDrawDeleted = useCallback((e: any) => {
+  const handleDrawDeleted = useCallback((e: { layers: L.LayerGroup }) => {
     if (!featureGroupRef.current) return;
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
@@ -137,15 +200,21 @@ export function useLeafletDraw(
       esriImagery.addTo(map);
 
       const heatmapItems = new L.FeatureGroup();
+      const panelItems = new L.FeatureGroup();
       const drawnItems = new L.FeatureGroup();
       const previewItems = new L.FeatureGroup();
+      const manualPreviewItems = new L.FeatureGroup();
       map.addLayer(heatmapItems);
+      map.addLayer(panelItems);
       map.addLayer(drawnItems);
       map.addLayer(previewItems);
+      map.addLayer(manualPreviewItems);
       mapRef.current = map;
       heatmapGroupRef.current = heatmapItems;
+      panelGroupRef.current = panelItems;
       featureGroupRef.current = drawnItems;
       previewGroupRef.current = previewItems;
+      manualPreviewGroupRef.current = manualPreviewItems;
     }
     mapRef.current.setView([coordinates.lat, coordinates.lng], 19);
     if (locationMarkerRef.current) mapRef.current.removeLayer(locationMarkerRef.current);
@@ -236,6 +305,117 @@ export function useLeafletDraw(
       heatmapGroup.addLayer(layer);
     });
   }, [solarHeatmap]);
+
+  useEffect(() => {
+    const panelGroup = panelGroupRef.current;
+    if (!panelGroup) {
+      return;
+    }
+
+    panelGroup.clearLayers();
+
+    placedPanels.forEach((panel) => {
+      const layer = L.polygon(toLatLngRing(panel.feature.geometry.coordinates[0]), {
+        color: "#dbeafe",
+        weight: 1,
+        opacity: 0.95,
+        fillColor: "#123f97",
+        fillOpacity: panel.source === "manual" ? 0.72 : 0.58,
+        interactive: false,
+        bubblingMouseEvents: false,
+      });
+      panelGroup.addLayer(layer);
+    });
+  }, [placedPanels]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const manualPreviewGroup = manualPreviewGroupRef.current;
+    if (!map || !manualPreviewGroup) {
+      return;
+    }
+
+    const container = map.getContainer();
+    let previewLayer: L.Polygon | null = null;
+
+    const clearPreview = () => {
+      manualPreviewGroup.clearLayers();
+      previewLayer = null;
+    };
+
+    if (!showMapTools || viewMode !== "satellite" || mode !== "manual") {
+      clearPreview();
+      container.style.cursor = "";
+      return;
+    }
+
+    const renderPreview = (latlng: L.LatLng) => {
+      if (hasActiveDrawTool(map)) {
+        clearPreview();
+        container.style.cursor = "";
+        return;
+      }
+
+      container.style.cursor = "crosshair";
+      const candidate = createPanelFeatureAtCenter({ lat: latlng.lat, lng: latlng.lng }, selectedPanelTypeId);
+      const validation = validatePanelPlacement(
+        candidate,
+        context,
+        placedPanels.map((panel) => panel.feature)
+      );
+      const previewLatLngs = toLatLngRing(candidate.geometry.coordinates[0]);
+      const previewStyle = createManualPreviewStyle(validation.isValid);
+
+      if (!previewLayer) {
+        previewLayer = L.polygon(previewLatLngs, previewStyle);
+        manualPreviewGroup.addLayer(previewLayer);
+        return;
+      }
+
+      previewLayer.setLatLngs(previewLatLngs as L.LatLngExpression[]);
+      previewLayer.setStyle(previewStyle);
+    };
+
+    const handleMouseMove = (event: L.LeafletMouseEvent) => {
+      renderPreview(event.latlng);
+    };
+
+    const handleMapClick = (event: L.LeafletMouseEvent) => {
+      if (hasActiveDrawTool(map)) {
+        return;
+      }
+
+      const candidate = createPanelFeatureAtCenter({ lat: event.latlng.lat, lng: event.latlng.lng }, selectedPanelTypeId);
+      const validation = validatePanelPlacement(
+        candidate,
+        context,
+        placedPanels.map((panel) => panel.feature)
+      );
+
+      if (validation.isValid) {
+        onPlacePanel(candidate);
+        return;
+      }
+
+      renderPreview(event.latlng);
+    };
+
+    const handleMouseLeave = () => {
+      clearPreview();
+    };
+
+    map.on("mousemove", handleMouseMove);
+    map.on("click", handleMapClick);
+    container.addEventListener("mouseleave", handleMouseLeave);
+
+    return () => {
+      map.off("mousemove", handleMouseMove);
+      map.off("click", handleMapClick);
+      container.removeEventListener("mouseleave", handleMouseLeave);
+      container.style.cursor = "";
+      clearPreview();
+    };
+  }, [context, mode, onPlacePanel, placedPanels, selectedPanelTypeId, showMapTools, viewMode]);
 
   const clearDetectionPreview = useCallback(() => {
     previewGroupRef.current?.clearLayers();
