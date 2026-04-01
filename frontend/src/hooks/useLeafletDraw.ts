@@ -197,7 +197,7 @@ export function useLeafletDraw(
       );
 
       const monochromeTiles = L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
         {
           maxZoom: 20,
           subdomains: "abcd",
