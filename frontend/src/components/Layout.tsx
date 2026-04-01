@@ -38,8 +38,10 @@ export function MainHeader({
   onToggleSolarOverlay,
 }: MainHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const showRecentSearches = address.trim().length === 0 && recentSearches.length > 0;
+  const searchRef = useRef<HTMLDivElement | null>(null);
+  const showRecentSearches = isSearchFocused && address.trim().length === 0 && recentSearches.length > 0;
   const showSearchDropdown = showRecentSearches || searchResults.length > 0;
 
   useEffect(() => {
@@ -56,6 +58,17 @@ export function MainHeader({
     window.addEventListener("mousedown", handlePointerDown);
     return () => window.removeEventListener("mousedown", handlePointerDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!searchRef.current?.contains(event.target as Node)) {
+        setIsSearchFocused(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, []);
 
   return (
     <header className="relative z-40 border-b border-white/10 bg-black/[0.35] backdrop-blur-2xl">
@@ -77,7 +90,7 @@ export function MainHeader({
 
           <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
             <div className="flex w-full min-w-0 flex-col items-center gap-3 lg:flex-row lg:items-center lg:justify-center">
-              <div className="relative w-full max-w-[560px]">
+              <div ref={searchRef} className="relative w-full max-w-[560px]">
                 <div className="relative">
                   <Search
                     size={16}
@@ -87,6 +100,7 @@ export function MainHeader({
                     placeholder="Search any address, landmark, or rooftop..."
                     value={address}
                     onChange={(event) => onAddressChange(event.target.value)}
+                    onFocus={() => setIsSearchFocused(true)}
                     onKeyDown={(event) => event.key === "Enter" && onSearchSubmit()}
                     className="h-11 border-white/5 bg-black/30 pl-11 pr-14"
                   />
