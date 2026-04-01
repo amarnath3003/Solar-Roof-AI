@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet-draw";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
-import { SunProjection } from "@/lib/sunProjection";
 import { AutoRoofDetectionResult, Coordinates, RoofElement, ObstacleMarker } from "@/types";
 
 function createObstacleIcon() {
@@ -31,7 +30,6 @@ export function useLeafletDraw(
   showMapTools: boolean,
   setRoofElements: React.Dispatch<React.SetStateAction<RoofElement[]>>,
   setObstacleMarkers: React.Dispatch<React.SetStateAction<ObstacleMarker[]>>,
-  sunProjection: SunProjection | null,
   solarHeatmap: SolarHeatmap | null
 ) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -39,7 +37,6 @@ export function useLeafletDraw(
   const heatmapGroupRef = useRef<L.FeatureGroup | null>(null);
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
   const previewGroupRef = useRef<L.FeatureGroup | null>(null);
-  const sunPathGroupRef = useRef<L.FeatureGroup | null>(null);
   const drawControlRef = useRef<L.Control | null>(null);
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
 
@@ -142,16 +139,13 @@ export function useLeafletDraw(
       const heatmapItems = new L.FeatureGroup();
       const drawnItems = new L.FeatureGroup();
       const previewItems = new L.FeatureGroup();
-      const sunPathItems = new L.FeatureGroup();
       map.addLayer(heatmapItems);
       map.addLayer(drawnItems);
       map.addLayer(previewItems);
-      map.addLayer(sunPathItems);
       mapRef.current = map;
       heatmapGroupRef.current = heatmapItems;
       featureGroupRef.current = drawnItems;
       previewGroupRef.current = previewItems;
-      sunPathGroupRef.current = sunPathItems;
     }
     mapRef.current.setView([coordinates.lat, coordinates.lng], 19);
     if (locationMarkerRef.current) mapRef.current.removeLayer(locationMarkerRef.current);
@@ -242,43 +236,6 @@ export function useLeafletDraw(
       heatmapGroup.addLayer(layer);
     });
   }, [solarHeatmap]);
-
-  useEffect(() => {
-    const sunPathGroup = sunPathGroupRef.current;
-    if (!sunPathGroup) {
-      return;
-    }
-
-    sunPathGroup.clearLayers();
-
-    if (!sunProjection) {
-      return;
-    }
-
-    const centerLatLng: L.LatLngExpression = [sunProjection.center.lat, sunProjection.center.lng];
-    const endpointLatLng: L.LatLngExpression = [sunProjection.endpoint.lat, sunProjection.endpoint.lng];
-    const opacity = sunProjection.isAboveHorizon ? 0.9 : 0.4;
-
-    const ray = L.polyline([centerLatLng, endpointLatLng], {
-      color: "#facc15",
-      weight: 6,
-      opacity,
-      dashArray: "12, 10",
-      interactive: false,
-    });
-    const centerMarker = L.circleMarker(centerLatLng, {
-      radius: 5,
-      color: "#fde68a",
-      fillColor: "#facc15",
-      fillOpacity: opacity,
-      opacity,
-      weight: 2,
-      interactive: false,
-    });
-
-    sunPathGroup.addLayer(ray);
-    sunPathGroup.addLayer(centerMarker);
-  }, [sunProjection]);
 
   const clearDetectionPreview = useCallback(() => {
     previewGroupRef.current?.clearLayers();

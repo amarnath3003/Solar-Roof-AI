@@ -1,5 +1,5 @@
 import * as SunCalc from "suncalc";
-import { SunProjectionSeason, getRoofFootprintCenter } from "@/lib/sunProjection";
+import { getRoofFootprintCenter } from "@/lib/sunProjection";
 import { Coordinates, ObstacleMarker, RoofElement } from "@/types";
 
 type XYPoint = {
@@ -10,6 +10,7 @@ type XYPoint = {
 type SolarSample = {
   altitudeRadians: number;
   shadowDirection: XYPoint;
+  sunDirection: XYPoint;
   weight: number;
 };
 
@@ -42,7 +43,6 @@ export interface SolarHeatmap {
 }
 
 type SolarHeatmapOptions = {
-  season: SunProjectionSeason;
   obstacleMarkers: ObstacleMarker[];
 };
 
@@ -55,6 +55,8 @@ const DEFAULT_OBSTACLE_HEIGHT_METERS = 1.2;
 const DEFAULT_OBSTACLE_RADIUS_METERS = 0.75;
 const UNIFORM_VARIANCE_THRESHOLD = 0.06;
 const RELATIVE_RANGE_FLOOR = 0.02;
+const DIRECTIONAL_WEIGHT = 0.35;
+const SHADOW_WEIGHT = 0.65;
 
 function toRadians(degrees: number) {
   return (degrees * Math.PI) / 180;
@@ -200,42 +202,49 @@ function getCompassDegrees(azimuthRadians: number) {
   return (toDegrees(azimuthRadians) + 180 + 360) % 360;
 }
 
-function createSeasonDate(season: SunProjectionSeason, timeOfDay: number) {
+function createSeasonDate(month: number, day: number, timeOfDay: number) {
   const currentYear = new Date().getFullYear();
   const hours = Math.floor(timeOfDay);
   const minutes = Math.round((timeOfDay - hours) * 60);
-  const month = season === "summer-solstice" ? 5 : 11;
-  const day = 21;
 
   return new Date(currentYear, month, day, hours, minutes, 0, 0);
 }
 
-function createSolarSamples(origin: Coordinates, season: SunProjectionSeason) {
+function createSolarSamples(origin: Coordinates) {
   const samples: SolarSample[] = [];
+  const seasonAnchors = [
+    { month: 2, day: 21, weight: 0.2 },
+    { month: 5, day: 21, weight: 0.3 },
+    { month: 8, day: 21, weight: 0.2 },
+    { month: 11, day: 21, weight: 0.3 },
+  ];
 
-  for (let timeOfDay = 6; timeOfDay <= 18; timeOfDay += TIME_STEP_HOURS) {
-    const date = createSeasonDate(season, timeOfDay);
-    const sunPosition = SunCalc.getPosition(date, origin.lat, origin.lng);
+  seasonAnchors.forEach(({ month, day, weight: seasonWeight }) => {
+    for (let timeOfDay = 6; timeOfDay <= 18; timeOfDay += TIME_STEP_HOURS) {
+      const date = createSeasonDate(month, day, timeOfDay);
+      const sunPosition = SunCalc.getPosition(date, origin.lat, origin.lng);
 
-    if (sunPosition.altitude <= 0) {
-      continue;
+      if (sunPosition.altitude <= 0) {
+        continue;
+      }
+
+      const sunAzimuthDegrees = getCompassDegrees(sunPosition.azimuth);
+      const sunVector = {
+        x: Math.sin(toRadians(sunAzimuthDegrees)),
+        y: Math.cos(toRadians(sunAzimuthDegrees)),
+      };
+
+      samples.push({
+        altitudeRadians: sunPosition.altitude,
+        shadowDirection: {
+          x: -sunVector.x,
+          y: -sunVector.y,
+        },
+        sunDirection: sunVector,
+        weight: Math.sin(sunPosition.altitude) * TIME_STEP_HOURS * seasonWeight,
+      });
     }
-
-    const sunAzimuthDegrees = getCompassDegrees(sunPosition.azimuth);
-    const sunVector = {
-      x: Math.sin(toRadians(sunAzimuthDegrees)),
-      y: Math.cos(toRadians(sunAzimuthDegrees)),
-    };
-
-    samples.push({
-      altitudeRadians: sunPosition.altitude,
-      shadowDirection: {
-        x: -sunVector.x,
-        y: -sunVector.y,
-      },
-      weight: Math.sin(sunPosition.altitude) * TIME_STEP_HOURS,
-    });
-  }
+  });
 
   return samples;
 }
@@ -275,6 +284,25 @@ function isPointShadowed(point: XYPoint, obstacle: ShadowObstacle, sample: Solar
   const effectiveRadius = obstacle.radiusM + obstacle.heightM * 0.18;
 
   return perpendicular <= effectiveRadius;
+}
+
+function getDirectionalOpennessScore(point: XYPoint, roofPoints: XYPoint[], sample: SolarSample) {
+  let minProjection = Number.POSITIVE_INFINITY;
+  let maxProjection = Number.NEGATIVE_INFINITY;
+
+  roofPoints.forEach((roofPoint) => {
+    const projection = roofPoint.x * sample.sunDirection.x + roofPoint.y * sample.sunDirection.y;
+    minProjection = Math.min(minProjection, projection);
+    maxProjection = Math.max(maxProjection, projection);
+  });
+
+  const span = maxProjection - minProjection;
+  if (span <= Number.EPSILON) {
+    return 0.5;
+  }
+
+  const pointProjection = point.x * sample.sunDirection.x + point.y * sample.sunDirection.y;
+  return clamp((pointProjection - minProjection) / span, 0, 1);
 }
 
 function interpolateChannel(start: number, end: number, amount: number) {
@@ -341,7 +369,7 @@ function getZoneLabel(point: XYPoint, bounds: { minX: number; maxX: number; minY
 
 export function calculateSolarHeatmap(
   roofElement: RoofElement,
-  { season, obstacleMarkers }: SolarHeatmapOptions
+  { obstacleMarkers }: SolarHeatmapOptions
 ): SolarHeatmap | null {
   const center = getRoofFootprintCenter(roofElement);
   const ring = getPrimaryRing(roofElement);
@@ -355,7 +383,7 @@ export function calculateSolarHeatmap(
     return null;
   }
 
-  const solarSamples = createSolarSamples(center, season);
+  const solarSamples = createSolarSamples(center);
   if (solarSamples.length === 0) {
     return null;
   }
@@ -381,15 +409,19 @@ export function calculateSolarHeatmap(
       }
 
       let exposedWeight = 0;
+      let directionalWeight = 0;
 
       solarSamples.forEach((sample) => {
         const blocked = shadowObstacles.some((obstacle) => isPointShadowed(centerPoint, obstacle, sample));
         if (!blocked) {
           exposedWeight += sample.weight;
         }
+        directionalWeight += getDirectionalOpennessScore(centerPoint, roofPoints, sample) * sample.weight;
       });
 
-      const score = totalAvailableWeight > 0 ? clamp(exposedWeight / totalAvailableWeight, 0, 1) : 0;
+      const shadowScore = totalAvailableWeight > 0 ? clamp(exposedWeight / totalAvailableWeight, 0, 1) : 0;
+      const opennessScore = totalAvailableWeight > 0 ? clamp(directionalWeight / totalAvailableWeight, 0, 1) : 0.5;
+      const score = clamp(shadowScore * SHADOW_WEIGHT + opennessScore * DIRECTIONAL_WEIGHT, 0, 1);
       const corners = [
         { x: centerPoint.x - halfCell, y: centerPoint.y - halfCell },
         { x: centerPoint.x + halfCell, y: centerPoint.y - halfCell },

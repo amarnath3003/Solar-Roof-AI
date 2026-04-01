@@ -27,8 +27,10 @@ type DesktopSidebarProps = {
 
 type MainHeaderProps = {
   viewMode: ViewMode;
+  solarOverlayEnabled: boolean;
   onOpenMobileMenu: () => void;
   onSetViewMode: (mode: ViewMode) => void;
+  onToggleSolarOverlay: () => void;
 };
 
 export function MobileMenuOverlay({
@@ -152,7 +154,7 @@ export function DesktopSidebar({
   );
 }
 
-export function MainHeader({ viewMode, onOpenMobileMenu, onSetViewMode }: MainHeaderProps) {
+export function MainHeader({ viewMode, solarOverlayEnabled, onOpenMobileMenu, onSetViewMode, onToggleSolarOverlay }: MainHeaderProps) {
   return (
     <header className="h-20 border-b border-white/10 bg-black/20 backdrop-blur-md flex items-center justify-between px-6 lg:px-10 sticky top-0 z-50">
       <div className="flex items-center gap-4">
@@ -186,6 +188,15 @@ export function MainHeader({ viewMode, onOpenMobileMenu, onSetViewMode }: MainHe
           )}
         >
           Imagery
+        </button>
+        <button
+          onClick={onToggleSolarOverlay}
+          className={cn(
+            "px-4 py-2 text-[10px] uppercase tracking-[0.15em] font-semibold rounded-xl transition-all duration-300",
+            solarOverlayEnabled ? "bg-lime-300 text-black shadow-lg" : "text-zinc-500 hover:text-white hover:bg-white/5"
+          )}
+        >
+          Solar View
         </button>
       </div>
     </header>
