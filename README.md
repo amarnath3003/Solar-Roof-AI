@@ -22,7 +22,7 @@ Solar Roof AI is a portfolio project that combines a modern geospatial frontend 
 
 This project is built to feel like a lightweight solar pre-sales and planning tool rather than a narrow technical demo. It mixes interactive mapping, AI-assisted detection, spatial calculations, and planning-oriented UX into one product experience.
 
-The goal is not just to detect roofs. The goal is to make rooftop analysis feel understandable, visual, and actionable.
+The goal is not just to detect roofs. The goal is to make rooftop analysis feel understandable, visual, and actionable. 
 
 ## Feature Highlights
 
