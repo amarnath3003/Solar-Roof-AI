@@ -53,12 +53,18 @@ function formatCurrency(value: number) {
 }
 
 function formatCompactCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+  const absoluteValue = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+
+  if (absoluteValue >= 1_000_000) {
+    return `${sign}$${formatNumber(absoluteValue / 1_000_000, 1)}M`;
+  }
+
+  if (absoluteValue >= 1_000) {
+    return `${sign}$${formatNumber(absoluteValue / 1_000, 1)}K`;
+  }
+
+  return `${sign}$${formatNumber(absoluteValue, 0)}`;
 }
 
 function formatNumber(value: number, maximumFractionDigits = 2) {

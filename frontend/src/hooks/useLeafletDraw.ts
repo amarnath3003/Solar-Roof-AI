@@ -320,6 +320,28 @@ export function useLeafletDraw(
   }, [setupMapIfNeeded]);
 
   useEffect(() => {
+    return () => {
+      const map = mapRef.current;
+      if (!map) {
+        return;
+      }
+
+      map.off();
+      map.remove();
+      mapRef.current = null;
+      heatmapGroupRef.current = null;
+      panelGroupRef.current = null;
+      featureGroupRef.current = null;
+      previewGroupRef.current = null;
+      manualPreviewGroupRef.current = null;
+      drawControlRef.current = null;
+      locationMarkerRef.current = null;
+      monochromeLayerRef.current = null;
+      satelliteLayerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     syncDrawTools();
   }, [syncDrawTools]);
 

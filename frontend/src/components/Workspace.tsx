@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
+import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { Button, Card } from "@/components/ui/glass";
 import { PANEL_TYPES } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
@@ -585,60 +586,72 @@ export function WorkspaceContent({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-      <div
-        className={`grid min-h-[25rem] shrink-0 grid-cols-1 gap-4 items-stretch ${
-          showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
-        }`}
+      <WorkspaceErrorBoundary
+        title="Workspace panel hit an issue"
+        description="The map workspace failed to render for this location. Try searching again or toggling the sidebar once more."
       >
-        <MapViewport mapContainerRef={mapContainerRef} />
-        {showMapTools && (
-          <WorkspaceDataPanel
-            roofElements={roofElements}
-            obstacleMarkers={obstacleMarkers}
-            onClearAll={onClearAll}
-            onExport={onExport}
-            onAutoDetect={onAutoDetect}
-            onCalculateSqFt={onCalculateSqFt}
-            onAcceptDetection={onAcceptDetection}
-            onRejectDetection={onRejectDetection}
-            isAutoDetecting={isAutoDetecting}
-            detectionPreview={detectionPreview}
-            detectionMessage={detectionMessage}
-            roofAreaSummary={roofAreaSummary}
-            roofAreaMessage={roofAreaMessage}
-            detectionConfidenceThreshold={detectionConfidenceThreshold}
-            onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
-            solarOverlayEnabled={solarOverlayEnabled}
-            solarHeatmap={solarHeatmap}
-            panelTypeId={panelTypeId}
-            onPanelTypeChange={onPanelTypeChange}
-            panelLayoutMode={panelLayoutMode}
-            onPanelLayoutModeChange={onPanelLayoutModeChange}
-            autoPackPanelLimit={autoPackPanelLimit}
-            onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
-            onAutoPackPanels={onAutoPackPanels}
-            onClearPanels={onClearPanels}
-            placedPanelCount={placedPanelCount}
-            estimatedPanelKw={estimatedPanelKw}
-            panelLayoutMessage={panelLayoutMessage}
-            exclusionZoneCount={exclusionZoneCount}
-            hasPrimaryRoof={hasPrimaryRoof}
-          />
-        )}
-      </div>
+        <div
+          className={`grid min-h-[25rem] shrink-0 grid-cols-1 gap-4 items-stretch ${
+            showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
+          }`}
+        >
+          <MapViewport mapContainerRef={mapContainerRef} />
+          {showMapTools && (
+            <WorkspaceDataPanel
+              roofElements={roofElements}
+              obstacleMarkers={obstacleMarkers}
+              onClearAll={onClearAll}
+              onExport={onExport}
+              onAutoDetect={onAutoDetect}
+              onCalculateSqFt={onCalculateSqFt}
+              onAcceptDetection={onAcceptDetection}
+              onRejectDetection={onRejectDetection}
+              isAutoDetecting={isAutoDetecting}
+              detectionPreview={detectionPreview}
+              detectionMessage={detectionMessage}
+              roofAreaSummary={roofAreaSummary}
+              roofAreaMessage={roofAreaMessage}
+              detectionConfidenceThreshold={detectionConfidenceThreshold}
+              onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
+              solarOverlayEnabled={solarOverlayEnabled}
+              solarHeatmap={solarHeatmap}
+              panelTypeId={panelTypeId}
+              onPanelTypeChange={onPanelTypeChange}
+              panelLayoutMode={panelLayoutMode}
+              onPanelLayoutModeChange={onPanelLayoutModeChange}
+              autoPackPanelLimit={autoPackPanelLimit}
+              onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
+              onAutoPackPanels={onAutoPackPanels}
+              onClearPanels={onClearPanels}
+              placedPanelCount={placedPanelCount}
+              estimatedPanelKw={estimatedPanelKw}
+              panelLayoutMessage={panelLayoutMessage}
+              exclusionZoneCount={exclusionZoneCount}
+              hasPrimaryRoof={hasPrimaryRoof}
+            />
+          )}
+        </div>
+      </WorkspaceErrorBoundary>
 
-      <Suspense
-        fallback={
-          <Card className="rounded-[2rem] border-white/15 p-6">
-            <div className="flex items-center gap-3 text-sm text-zinc-300">
-              <Loader2 size={16} className="animate-spin text-emerald-200" />
-              Loading solar financial dashboard...
-            </div>
-          </Card>
-        }
-      >
-        <SolarFinancialDashboard />
-      </Suspense>
+      {showMapTools ? (
+        <WorkspaceErrorBoundary
+          title="Financial dashboard hit an issue"
+          description="The solar ROI module could not render, but the map workspace is still available. Toggle the sidebar off and back on to retry."
+        >
+          <Suspense
+            fallback={
+              <Card className="rounded-[2rem] border-white/15 p-6">
+                <div className="flex items-center gap-3 text-sm text-zinc-300">
+                  <Loader2 size={16} className="animate-spin text-emerald-200" />
+                  Loading solar financial dashboard...
+                </div>
+              </Card>
+            }
+          >
+            <SolarFinancialDashboard />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      ) : null}
     </div>
   );
 }
