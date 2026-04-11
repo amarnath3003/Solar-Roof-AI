@@ -1,5 +1,6 @@
 import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
+import { SolarFinancialDashboard } from "@/components/SolarFinancialDashboard";
 import { Button, Card } from "@/components/ui/glass";
 import { PANEL_TYPES } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
@@ -177,7 +178,7 @@ function MapViewport({
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
 }) {
   return (
-    <Card className="relative flex-1 overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl">
+    <Card className="relative h-full min-h-[25rem] overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl lg:min-h-[35rem]">
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full bg-black" />
     </Card>
   );
@@ -579,46 +580,50 @@ export function WorkspaceContent({
   }
 
   return (
-    <div
-      className={`flex-1 grid h-full min-h-0 grid-cols-1 gap-4 ${
-        showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
-      } overflow-hidden items-stretch`}
-    >
-      <MapViewport mapContainerRef={mapContainerRef} />
-      {showMapTools && (
-        <WorkspaceDataPanel
-          roofElements={roofElements}
-          obstacleMarkers={obstacleMarkers}
-          onClearAll={onClearAll}
-          onExport={onExport}
-          onAutoDetect={onAutoDetect}
-          onCalculateSqFt={onCalculateSqFt}
-          onAcceptDetection={onAcceptDetection}
-          onRejectDetection={onRejectDetection}
-          isAutoDetecting={isAutoDetecting}
-          detectionPreview={detectionPreview}
-          detectionMessage={detectionMessage}
-          roofAreaSummary={roofAreaSummary}
-          roofAreaMessage={roofAreaMessage}
-          detectionConfidenceThreshold={detectionConfidenceThreshold}
-          onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
-          solarOverlayEnabled={solarOverlayEnabled}
-          solarHeatmap={solarHeatmap}
-          panelTypeId={panelTypeId}
-          onPanelTypeChange={onPanelTypeChange}
-          panelLayoutMode={panelLayoutMode}
-          onPanelLayoutModeChange={onPanelLayoutModeChange}
-          autoPackPanelLimit={autoPackPanelLimit}
-          onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
-          onAutoPackPanels={onAutoPackPanels}
-          onClearPanels={onClearPanels}
-          placedPanelCount={placedPanelCount}
-          estimatedPanelKw={estimatedPanelKw}
-          panelLayoutMessage={panelLayoutMessage}
-          exclusionZoneCount={exclusionZoneCount}
-          hasPrimaryRoof={hasPrimaryRoof}
-        />
-      )}
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+      <div
+        className={`grid min-h-[25rem] shrink-0 grid-cols-1 gap-4 items-stretch ${
+          showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
+        }`}
+      >
+        <MapViewport mapContainerRef={mapContainerRef} />
+        {showMapTools && (
+          <WorkspaceDataPanel
+            roofElements={roofElements}
+            obstacleMarkers={obstacleMarkers}
+            onClearAll={onClearAll}
+            onExport={onExport}
+            onAutoDetect={onAutoDetect}
+            onCalculateSqFt={onCalculateSqFt}
+            onAcceptDetection={onAcceptDetection}
+            onRejectDetection={onRejectDetection}
+            isAutoDetecting={isAutoDetecting}
+            detectionPreview={detectionPreview}
+            detectionMessage={detectionMessage}
+            roofAreaSummary={roofAreaSummary}
+            roofAreaMessage={roofAreaMessage}
+            detectionConfidenceThreshold={detectionConfidenceThreshold}
+            onDetectionConfidenceThresholdChange={onDetectionConfidenceThresholdChange}
+            solarOverlayEnabled={solarOverlayEnabled}
+            solarHeatmap={solarHeatmap}
+            panelTypeId={panelTypeId}
+            onPanelTypeChange={onPanelTypeChange}
+            panelLayoutMode={panelLayoutMode}
+            onPanelLayoutModeChange={onPanelLayoutModeChange}
+            autoPackPanelLimit={autoPackPanelLimit}
+            onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
+            onAutoPackPanels={onAutoPackPanels}
+            onClearPanels={onClearPanels}
+            placedPanelCount={placedPanelCount}
+            estimatedPanelKw={estimatedPanelKw}
+            panelLayoutMessage={panelLayoutMessage}
+            exclusionZoneCount={exclusionZoneCount}
+            hasPrimaryRoof={hasPrimaryRoof}
+          />
+        )}
+      </div>
+
+      <SolarFinancialDashboard />
     </div>
   );
 }
