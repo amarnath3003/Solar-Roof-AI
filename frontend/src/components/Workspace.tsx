@@ -1,6 +1,5 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
-import { SolarFinancialDashboard } from "@/components/SolarFinancialDashboard";
 import { Button, Card } from "@/components/ui/glass";
 import { PANEL_TYPES } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
@@ -14,6 +13,11 @@ import {
   RoofElement,
   ViewMode,
 } from "@/types";
+
+const SolarFinancialDashboard = lazy(async () => {
+  const module = await import("@/components/SolarFinancialDashboard");
+  return { default: module.SolarFinancialDashboard };
+});
 
 type WorkspaceContentProps = {
   coordinates: Coordinates | null;
@@ -623,7 +627,18 @@ export function WorkspaceContent({
         )}
       </div>
 
-      <SolarFinancialDashboard />
+      <Suspense
+        fallback={
+          <Card className="rounded-[2rem] border-white/15 p-6">
+            <div className="flex items-center gap-3 text-sm text-zinc-300">
+              <Loader2 size={16} className="animate-spin text-emerald-200" />
+              Loading solar financial dashboard...
+            </div>
+          </Card>
+        }
+      >
+        <SolarFinancialDashboard />
+      </Suspense>
     </div>
   );
 }
