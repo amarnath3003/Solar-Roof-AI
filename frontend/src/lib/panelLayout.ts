@@ -34,6 +34,10 @@ export interface AutoPackPanelsResult {
   attempts: number;
 }
 
+export interface AutoPackCapacityResult extends AutoPackPanelsResult {
+  panelCount: number;
+}
+
 export interface AutoPackPanelsOptions {
   maxPanels?: number;
   solarHeatmap?: SolarHeatmap | null;
@@ -371,11 +375,12 @@ function selectPreferredPanels(
   };
 }
 
-export function autoPackPanels(
+function runAutoPackPanels(
   context: PanelLayoutContext,
   panelTypeId: PanelTypeId,
   alignmentAngleDegrees = 0,
-  options: AutoPackPanelsOptions = {}
+  maxPanels: number,
+  solarHeatmap?: SolarHeatmap | null
 ): AutoPackPanelsResult {
   if (!context.primaryRoof) {
     return {
@@ -410,7 +415,6 @@ export function autoPackPanels(
     }
   );
   const { widthM, heightM } = PANEL_TYPES[panelTypeId];
-  const maxPanels = getNormalizedMaxPanels(options.maxPanels);
   let bestPanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
   let bestScore = Number.NEGATIVE_INFINITY;
 
@@ -436,7 +440,7 @@ export function autoPackPanels(
       centerY += heightM;
     }
 
-    const preferredPanels = selectPreferredPanels(candidatePanels, maxPanels, options.solarHeatmap);
+    const preferredPanels = selectPreferredPanels(candidatePanels, maxPanels, solarHeatmap);
 
     if (
       preferredPanels.panels.length > bestPanels.length ||
@@ -450,5 +454,40 @@ export function autoPackPanels(
   return {
     panels: bestPanels,
     attempts: GRID_OFFSETS.length,
+  };
+}
+
+export function autoPackPanels(
+  context: PanelLayoutContext,
+  panelTypeId: PanelTypeId,
+  alignmentAngleDegrees = 0,
+  options: AutoPackPanelsOptions = {}
+): AutoPackPanelsResult {
+  return runAutoPackPanels(
+    context,
+    panelTypeId,
+    alignmentAngleDegrees,
+    getNormalizedMaxPanels(options.maxPanels),
+    options.solarHeatmap
+  );
+}
+
+export function autoPackPanelsToCapacity(
+  context: PanelLayoutContext,
+  panelTypeId: PanelTypeId,
+  alignmentAngleDegrees = 0,
+  options: Omit<AutoPackPanelsOptions, "maxPanels"> = {}
+): AutoPackCapacityResult {
+  const result = runAutoPackPanels(
+    context,
+    panelTypeId,
+    alignmentAngleDegrees,
+    Number.POSITIVE_INFINITY,
+    options.solarHeatmap
+  );
+
+  return {
+    ...result,
+    panelCount: result.panels.length,
   };
 }
