@@ -29,11 +29,16 @@ import {
 type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
 
 const DEFAULT_PLANNER_INPUTS: SolarFinancialInputs = {
+  // EIA residential monthly bill baseline.
   monthlyBill: 142.26,
+  // Common modern residential module rating.
   panelCapacityWatts: 400,
+  // Rounded current U.S. residential utility-rate baseline.
   energyCostPerKwh: 0.18,
+  // National default is zero; local rebates can be entered manually.
   solarIncentiveAmount: 0,
-  costPerWatt: 3.15,
+  // NREL residential PV benchmark baseline.
+  costPerWatt: 2.9,
 };
 
 function clampValue(value: number, min: number, max: number) {
@@ -358,7 +363,7 @@ export default function App() {
     if (!panelLayoutContext.primaryRoof) {
       setPlannerSyncState("estimate");
       setPlannerSyncMessage(
-        `Estimate only: about ${plannerFinancials.targetPanelCount} panel(s) would offset roughly ${plannerFinancials.monthlyBill.toFixed(
+        `Estimate only: about ${plannerFinancials.targetPanelCount} panel(s) would offset roughly $${plannerFinancials.monthlyBill.toFixed(
           0
         )}/month. Draw a primary roof to verify what really fits.`
       );
@@ -378,7 +383,7 @@ export default function App() {
     }
 
     setPlannerSyncState("syncing");
-    setPlannerSyncMessage("Repacking panels from the current usage target and roof constraints...");
+    setPlannerSyncMessage("Repacking panels from the current bill target and roof constraints...");
 
     const syncHandle = window.setTimeout(() => {
       try {

@@ -12,7 +12,7 @@ import { SolarProjectionPoint } from "@/hooks/useSolarFinancials";
 
 type SolarFinancialChartProps = {
   data: SolarProjectionPoint[];
-  breakEvenYear: number | null;
+  breakEvenCalendarYear: number | null;
   width: number;
   height: number;
 };
@@ -49,7 +49,7 @@ function formatCompactCurrency(value: number) {
 
 export default function SolarFinancialChart({
   data,
-  breakEvenYear,
+  breakEvenCalendarYear,
   width,
   height,
 }: SolarFinancialChartProps) {
@@ -57,7 +57,7 @@ export default function SolarFinancialChart({
     <LineChart data={data} width={width} height={height} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
       <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
       <XAxis
-        dataKey="year"
+        dataKey="calendarYear"
         tickLine={false}
         axisLine={false}
         stroke="rgba(255,255,255,0.45)"
@@ -79,12 +79,12 @@ export default function SolarFinancialChart({
           color: "#fff",
         }}
         formatter={(value: number) => formatCurrency(value)}
-        labelFormatter={(label: number) => `Year ${label}`}
+        labelFormatter={(label: number) => `${label}`}
       />
       <Legend wrapperStyle={{ fontSize: "12px", color: "rgba(255,255,255,0.72)" }} />
-      {breakEvenYear ? (
+      {breakEvenCalendarYear ? (
         <ReferenceLine
-          x={breakEvenYear}
+          x={breakEvenCalendarYear}
           stroke="rgba(74, 222, 128, 0.9)"
           strokeDasharray="5 5"
           label={{
@@ -97,18 +97,18 @@ export default function SolarFinancialChart({
       ) : null}
       <Line
         type="monotone"
-        dataKey="costWithoutSolar"
-        name="Without Solar"
-        stroke="#f87171"
+        dataKey="costWithSolar"
+        name="Solar"
+        stroke="#60a5fa"
         strokeWidth={3}
         dot={false}
         activeDot={{ r: 5 }}
       />
       <Line
         type="monotone"
-        dataKey="costWithSolar"
-        name="With Solar"
-        stroke="#60a5fa"
+        dataKey="costWithoutSolar"
+        name="No solar"
+        stroke="#f87171"
         strokeWidth={3}
         dot={false}
         activeDot={{ r: 5 }}
