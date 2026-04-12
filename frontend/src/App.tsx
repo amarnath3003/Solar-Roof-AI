@@ -10,7 +10,14 @@ import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { SolarFinancialInputs, useSolarFinancials } from "@/hooks/useSolarFinancials";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
-import { PANEL_TYPES, autoPackPanels, autoPackPanelsToCapacity, buildPanelLayoutContext, validatePanelPlacement } from "@/lib/panelLayout";
+import {
+  PANEL_TYPES,
+  autoPackPanels,
+  autoPackPanelsToCapacity,
+  buildPanelLayoutContext,
+  getRoofOutlineAlignmentAngleDegrees,
+  validatePanelPlacement,
+} from "@/lib/panelLayout";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
 import { getActiveRoofFootprint } from "@/lib/sunProjection";
@@ -167,6 +174,10 @@ export default function App() {
     () => buildPanelLayoutContext(roofElements, obstacleMarkers),
     [roofElements, obstacleMarkers]
   );
+  const placedPanelFeatures = useMemo(
+    () => placedPanels.map((panel) => panel.feature),
+    [placedPanels]
+  );
   const estimatedPanelKw = useMemo(
     () => Number(((placedPanels.length * plannerInputs.panelCapacityWatts) / 1000).toFixed(1)),
     [placedPanels.length, plannerInputs.panelCapacityWatts]
@@ -181,9 +192,13 @@ export default function App() {
     [activeRoofFootprint, obstacleMarkers]
   );
   const solarHeatmap = solarOverlayEnabled ? solarAnalysis : null;
-  const panelAlignmentAngleDegrees = solarAnalysis?.alignmentAngleDegrees ?? activeRoofFootprint?.slope?.aspectDegrees ?? 180;
+  const panelAlignmentAngleDegrees =
+    getRoofOutlineAlignmentAngleDegrees(panelLayoutContext.primaryRoof) ??
+    activeRoofFootprint?.slope?.aspectDegrees ??
+    solarAnalysis?.alignmentAngleDegrees ??
+    180;
   const plannerCapacityAnalysis = useMemo(() => {
-    if (!panelLayoutContext.primaryRoof) {
+    if (!showMapTools || !layoutFinished || !panelLayoutContext.primaryRoof) {
       return {
         result: null,
         error: null as string | null,
@@ -193,7 +208,7 @@ export default function App() {
     try {
       return {
         result: autoPackPanelsToCapacity(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
-          solarHeatmap: solarAnalysis,
+          // Capacity checks only need maximum fit count, not solar-zone scoring.
         }),
         error: null as string | null,
       };
@@ -207,7 +222,7 @@ export default function App() {
         error: error instanceof Error ? error.message : "Planner capacity calculation failed.",
       };
     }
-  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, solarAnalysis]);
+  }, [layoutFinished, panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, showMapTools]);
   const hasPrimaryRoof = panelLayoutContext.primaryRoof !== null;
   const areaReady = (roofAreaSummary?.netSqFt ?? 0) > 0;
   const solarUnlocked = showMapTools && hasPrimaryRoof && layoutFinished && areaReady;
@@ -224,14 +239,14 @@ export default function App() {
 
   const handlePlaceManualPanel = useCallback(
     (feature: GeoJSON.Feature<GeoJSON.Polygon>) => {
-      if (!validatePanelPlacement(feature, panelLayoutContext, placedPanels.map((panel) => panel.feature)).isValid) {
+      if (!validatePanelPlacement(feature, panelLayoutContext, placedPanelFeatures).isValid) {
         return;
       }
 
       setPlacedPanels((previous) => [...previous, createPlacedPanelRecord(feature, panelTypeId, "manual")]);
       setPanelLayoutMessage("Manual panel stamped into the current usable roof area.");
     },
-    [panelLayoutContext, panelTypeId, placedPanels]
+    [panelLayoutContext, panelTypeId, placedPanelFeatures]
   );
 
   const handlePlannerInputChange = useCallback(
@@ -566,14 +581,11 @@ export default function App() {
     solarUnlockMessage,
     plannerCapacityAnalysis.error,
     panelLayoutContext,
-    plannerFinancials.targetPanelCount,
-    plannerFinancials.recommendedPanelCount,
     plannerFinancials.activePanelCount,
     plannerFinancials.roofLimited,
     plannerFinancials.roofMaxPanelCount,
     plannerFinancials.monthlyShortfallKwh,
     plannerFinancials.energyCoveredDisplayPercent,
-    plannerInputs.monthlyBill,
     panelLayoutMode,
     isDrawToolActive,
     panelTypeId,

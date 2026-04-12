@@ -40,6 +40,7 @@ export interface AutoPackCapacityResult extends AutoPackPanelsResult {
 
 export interface AutoPackPanelsOptions {
   maxPanels?: number;
+  panelGapMeters?: number;
   solarHeatmap?: SolarHeatmap | null;
 }
 
@@ -54,6 +55,8 @@ const DISTANCE_UNITS_KM = "kilometers";
 const BUFFER_UNITS_M = "meters";
 const EPSILON = 1e-9;
 const DEFAULT_OBSTACLE_CLEARANCE_METERS = 0.7;
+const DEFAULT_PANEL_GAP_METERS = 0.2;
+const MAX_PANEL_GAP_METERS = 0.5;
 const EARTH_RADIUS_METERS = 6_371_000;
 
 export const PANEL_TYPES: Record<PanelTypeId, PanelTypeDefinition> = {
@@ -118,6 +121,104 @@ function rotatePoint(pointInMeters: XYPoint, clockwiseDegrees: number): XYPoint 
 function getReferenceCenter(feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>): Coordinates {
   const [lng, lat] = centerOfMass(feature).geometry.coordinates;
   return { lat, lng };
+}
+
+function normalizeLinearRing(ring: number[][]) {
+  if (ring.length <= 1) {
+    return ring;
+  }
+
+  const [firstLng, firstLat] = ring[0];
+  const [lastLng, lastLat] = ring[ring.length - 1];
+  if (firstLng === lastLng && firstLat === lastLat) {
+    return ring.slice(0, ring.length - 1);
+  }
+
+  return ring;
+}
+
+function getRingPlanarArea(ring: number[][]) {
+  let area = 0;
+
+  for (let index = 0; index < ring.length; index += 1) {
+    const [currentLng, currentLat] = ring[index];
+    const [nextLng, nextLat] = ring[(index + 1) % ring.length];
+    area += currentLng * nextLat - nextLng * currentLat;
+  }
+
+  return area / 2;
+}
+
+function getPrimaryRoofRing(
+  primaryRoof: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>
+) {
+  if (primaryRoof.geometry.type === "Polygon") {
+    return primaryRoof.geometry.coordinates[0] ?? null;
+  }
+
+  let selectedRing: number[][] | null = null;
+  let selectedArea = 0;
+
+  primaryRoof.geometry.coordinates.forEach((polygonRings) => {
+    const ring = polygonRings[0];
+    if (!ring || ring.length < 3) {
+      return;
+    }
+
+    const ringArea = Math.abs(getRingPlanarArea(normalizeLinearRing(ring)));
+    if (ringArea > selectedArea) {
+      selectedArea = ringArea;
+      selectedRing = ring;
+    }
+  });
+
+  return selectedRing;
+}
+
+export function getRoofOutlineAlignmentAngleDegrees(
+  primaryRoof: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null
+) {
+  if (!primaryRoof) {
+    return null;
+  }
+
+  const ring = getPrimaryRoofRing(primaryRoof);
+  if (!ring) {
+    return null;
+  }
+
+  const normalizedRing = normalizeLinearRing(ring);
+  if (normalizedRing.length < 2) {
+    return null;
+  }
+
+  const referenceCenter = getReferenceCenter(primaryRoof);
+  let longestEdgeLength = 0;
+  let longestEdgeBearing: number | null = null;
+
+  for (let index = 0; index < normalizedRing.length; index += 1) {
+    const start = normalizedRing[index];
+    const end = normalizedRing[(index + 1) % normalizedRing.length];
+    const projectedStart = projectToMeters(start, referenceCenter);
+    const projectedEnd = projectToMeters(end, referenceCenter);
+    const deltaX = projectedEnd.x - projectedStart.x;
+    const deltaY = projectedEnd.y - projectedStart.y;
+    const edgeLength = Math.hypot(deltaX, deltaY);
+
+    if (edgeLength <= EPSILON || edgeLength <= longestEdgeLength) {
+      continue;
+    }
+
+    longestEdgeLength = edgeLength;
+    longestEdgeBearing = (toDegrees(Math.atan2(deltaX, deltaY)) + 360) % 360;
+  }
+
+  if (longestEdgeBearing === null) {
+    return null;
+  }
+
+  // A rectangle has the same orientation at 0deg and 180deg.
+  return ((longestEdgeBearing % 180) + 180) % 180;
 }
 
 function isPolygonFeature(
@@ -247,14 +348,16 @@ export function buildPanelLayoutContext(
     .filter((feature): feature is SupportedLayoutFeature => feature !== null);
 
   const polygonFeatures = layoutFeatures.filter(isPolygonFeature);
-  const primaryRoof =
-    polygonFeatures.reduce<GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null>((selected, candidate) => {
-      if (!selected || turfArea(candidate) > turfArea(selected)) {
-        return candidate;
-      }
+  let primaryRoof: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null = null;
+  let primaryRoofArea = Number.NEGATIVE_INFINITY;
 
-      return selected;
-    }, null) ?? null;
+  polygonFeatures.forEach((candidate) => {
+    const candidateArea = turfArea(candidate);
+    if (candidateArea > primaryRoofArea) {
+      primaryRoofArea = candidateArea;
+      primaryRoof = candidate;
+    }
+  });
 
   const exclusionZones =
     primaryRoof === null
@@ -335,6 +438,14 @@ function getNormalizedMaxPanels(maxPanels?: number) {
   return Math.min(25, Math.max(0, Math.floor(maxPanels)));
 }
 
+function getNormalizedPanelGapMeters(panelGapMeters?: number) {
+  if (typeof panelGapMeters !== "number" || !Number.isFinite(panelGapMeters)) {
+    return DEFAULT_PANEL_GAP_METERS;
+  }
+
+  return Math.min(MAX_PANEL_GAP_METERS, Math.max(0, panelGapMeters));
+}
+
 function getPanelSolarScore(
   panel: GeoJSON.Feature<GeoJSON.Polygon>,
   solarHeatmap?: SolarHeatmap | null
@@ -359,15 +470,12 @@ function selectPreferredPanels(
   maxPanels: number,
   solarHeatmap?: SolarHeatmap | null
 ) {
-  const rankedPanels = candidatePanels
-    .map((panel, index) => ({
+  const selectedPanels = candidatePanels
+    .slice(0, Math.min(candidatePanels.length, maxPanels))
+    .map((panel) => ({
       panel,
-      index,
       score: getPanelSolarScore(panel, solarHeatmap),
-    }))
-    .sort((left, right) => right.score - left.score || left.index - right.index);
-
-  const selectedPanels = rankedPanels.slice(0, Math.min(rankedPanels.length, maxPanels));
+    }));
 
   return {
     panels: selectedPanels.map(({ panel }) => panel),
@@ -380,6 +488,7 @@ function runAutoPackPanels(
   panelTypeId: PanelTypeId,
   alignmentAngleDegrees = 0,
   maxPanels: number,
+  panelGapMeters: number,
   solarHeatmap?: SolarHeatmap | null
 ): AutoPackPanelsResult {
   if (!context.primaryRoof) {
@@ -415,12 +524,14 @@ function runAutoPackPanels(
     }
   );
   const { widthM, heightM } = PANEL_TYPES[panelTypeId];
+  const panelPitchX = widthM + panelGapMeters;
+  const panelPitchY = heightM + panelGapMeters;
   let bestPanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
   let bestScore = Number.NEGATIVE_INFINITY;
 
   GRID_OFFSETS.forEach(([xOffsetFactor, yOffsetFactor]) => {
-    const startX = rotatedBounds.minX + widthM * (0.5 + xOffsetFactor);
-    let centerY = rotatedBounds.minY + heightM * (0.5 + yOffsetFactor);
+    const startX = rotatedBounds.minX + widthM / 2 + panelPitchX * xOffsetFactor;
+    let centerY = rotatedBounds.minY + heightM / 2 + panelPitchY * yOffsetFactor;
     const candidatePanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
 
     while (centerY + heightM / 2 <= rotatedBounds.maxY + EPSILON) {
@@ -435,9 +546,9 @@ function runAutoPackPanels(
         if (validatePanelPlacement(candidatePanel, context, candidatePanels).isValid) {
           candidatePanels.push(candidatePanel);
         }
-        centerX += widthM;
+        centerX += panelPitchX;
       }
-      centerY += heightM;
+      centerY += panelPitchY;
     }
 
     const preferredPanels = selectPreferredPanels(candidatePanels, maxPanels, solarHeatmap);
@@ -468,6 +579,7 @@ export function autoPackPanels(
     panelTypeId,
     alignmentAngleDegrees,
     getNormalizedMaxPanels(options.maxPanels),
+    getNormalizedPanelGapMeters(options.panelGapMeters),
     options.solarHeatmap
   );
 }
@@ -483,6 +595,7 @@ export function autoPackPanelsToCapacity(
     panelTypeId,
     alignmentAngleDegrees,
     Number.POSITIVE_INFINITY,
+    getNormalizedPanelGapMeters(options.panelGapMeters),
     options.solarHeatmap
   );
 

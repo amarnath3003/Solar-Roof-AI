@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet-draw";
 import { circle as turfCircle } from "@turf/turf";
@@ -108,6 +108,10 @@ export function useLeafletDraw(
   const drawToolStopHandlerRef = useRef<(() => void) | null>(null);
   const [isDrawToolActive, setIsDrawToolActive] = useState(false);
   const { context, mode, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
+  const placedPanelFeatures = useMemo(
+    () => placedPanels.map((panel) => panel.feature),
+    [placedPanels]
+  );
 
   const getGeometryType = (layer: L.Layer) => {
     if (layer instanceof L.Rectangle) return "rectangle";
@@ -435,6 +439,8 @@ export function useLeafletDraw(
 
     const container = map.getContainer();
     let previewLayer: L.Polygon | null = null;
+    let previewFrameId: number | null = null;
+    let queuedLatLng: L.LatLng | null = null;
 
     const clearPreview = () => {
       manualPreviewGroup.clearLayers();
@@ -463,7 +469,7 @@ export function useLeafletDraw(
       const validation = validatePanelPlacement(
         candidate,
         context,
-        placedPanels.map((panel) => panel.feature)
+        placedPanelFeatures
       );
       const previewLatLngs = toLatLngRing(candidate.geometry.coordinates[0]);
       const previewStyle = createManualPreviewStyle(validation.isValid);
@@ -479,7 +485,17 @@ export function useLeafletDraw(
     };
 
     const handleMouseMove = (event: L.LeafletMouseEvent) => {
-      renderPreview(event.latlng);
+      queuedLatLng = event.latlng;
+      if (previewFrameId !== null) {
+        return;
+      }
+
+      previewFrameId = window.requestAnimationFrame(() => {
+        previewFrameId = null;
+        if (queuedLatLng) {
+          renderPreview(queuedLatLng);
+        }
+      });
     };
 
     const handleMapClick = (event: L.LeafletMouseEvent) => {
@@ -495,7 +511,7 @@ export function useLeafletDraw(
       const validation = validatePanelPlacement(
         candidate,
         context,
-        placedPanels.map((panel) => panel.feature)
+        placedPanelFeatures
       );
 
       if (validation.isValid) {
@@ -518,10 +534,13 @@ export function useLeafletDraw(
       map.off("mousemove", handleMouseMove);
       map.off("click", handleMapClick);
       container.removeEventListener("mouseleave", handleMouseLeave);
+      if (previewFrameId !== null) {
+        window.cancelAnimationFrame(previewFrameId);
+      }
       container.style.cursor = "";
       clearPreview();
     };
-  }, [alignmentAngleDegrees, context, mode, onPlacePanel, placedPanels, selectedPanelTypeId, showMapTools, viewMode]);
+  }, [alignmentAngleDegrees, context, mode, onPlacePanel, placedPanelFeatures, selectedPanelTypeId, showMapTools, viewMode]);
 
   const clearDetectionPreview = useCallback(() => {
     previewGroupRef.current?.clearLayers();
