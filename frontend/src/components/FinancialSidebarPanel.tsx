@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, DollarSign, Info, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, DollarSign, Info } from "lucide-react";
 import { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
 import { PanelLayoutMode, PanelTypeId } from "@/types";
 import { PANEL_TYPES } from "@/lib/panelLayout";
@@ -18,7 +18,7 @@ interface FinancialSidebarPanelProps {
   onReset: () => void;
   panelTargetCount: number;
   onPanelTargetCountChange: (limit: number) => void;
-  onAutoPackPanels: () => void;
+  onApplyBestMaximum: () => void;
   onPanelTypeChange: (next: PanelTypeId) => void;
   panelLayoutMode: PanelLayoutMode;
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
@@ -123,7 +123,7 @@ export function FinancialSidebarPanel({
   onReset,
   panelTargetCount,
   onPanelTargetCountChange,
-  onAutoPackPanels,
+  onApplyBestMaximum,
   onPanelTypeChange,
   panelLayoutMode,
   onPanelLayoutModeChange,
@@ -210,12 +210,13 @@ export function FinancialSidebarPanel({
                   className="w-full accent-violet-400 disabled:opacity-40"
                 />
                 <button
-                  onClick={onAutoPackPanels}
-                  title="Auto-pack layout"
+                  type="button"
+                  onClick={onApplyBestMaximum}
+                  title="Find the best panel count for cost versus solar coverage"
                   disabled={isLocked || !hasRoofCapacity}
-                  className="p-1 bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-300/30 rounded-lg text-cyan-200 disabled:opacity-40"
+                  className="shrink-0 h-8 rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-2 text-[10px] uppercase tracking-[0.12em] text-cyan-100 hover:bg-cyan-500/40 disabled:opacity-40"
                 >
-                  <RefreshCw size={20} />
+                  Best Maximum
                 </button>
               </div>
               <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 leading-relaxed">

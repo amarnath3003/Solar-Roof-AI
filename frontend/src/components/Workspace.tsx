@@ -55,7 +55,7 @@ type WorkspaceContentProps = {
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
   panelTargetCount: number;
   onPanelTargetCountChange: (next: number) => void;
-  onAutoPackPanels: () => void;
+  onApplyBestMaximumPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
   estimatedPanelKw: number;
@@ -98,7 +98,7 @@ type WorkspaceDataPanelProps = {
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
   panelTargetCount: number;
   onPanelTargetCountChange: (next: number) => void;
-  onAutoPackPanels: () => void;
+  onApplyBestMaximumPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
   estimatedPanelKw: number;
@@ -227,7 +227,7 @@ function WorkspaceDataPanel({
   onPanelLayoutModeChange,
   panelTargetCount,
   onPanelTargetCountChange,
-  onAutoPackPanels,
+  onApplyBestMaximumPanels,
   onClearPanels,
   placedPanelCount,
   estimatedPanelKw,
@@ -388,7 +388,7 @@ function WorkspaceDataPanel({
               onReset={onResetPlannerInputs}
               panelTargetCount={panelTargetCount}
               onPanelTargetCountChange={onPanelTargetCountChange}
-              onAutoPackPanels={onAutoPackPanels}
+              onApplyBestMaximum={onApplyBestMaximumPanels}
               onPanelTypeChange={onPanelTypeChange}
               panelLayoutMode={panelLayoutMode}
               onPanelLayoutModeChange={onPanelLayoutModeChange}
@@ -479,7 +479,7 @@ export function WorkspaceContent({
   onPanelLayoutModeChange,
   panelTargetCount,
   onPanelTargetCountChange,
-  onAutoPackPanels,
+  onApplyBestMaximumPanels,
   onClearPanels,
   placedPanelCount,
   estimatedPanelKw,
@@ -538,7 +538,7 @@ export function WorkspaceContent({
               onPanelLayoutModeChange={onPanelLayoutModeChange}
               panelTargetCount={panelTargetCount}
               onPanelTargetCountChange={onPanelTargetCountChange}
-              onAutoPackPanels={onAutoPackPanels}
+              onApplyBestMaximumPanels={onApplyBestMaximumPanels}
               onClearPanels={onClearPanels}
               placedPanelCount={placedPanelCount}
               estimatedPanelKw={estimatedPanelKw}

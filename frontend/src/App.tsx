@@ -552,6 +552,26 @@ export default function App() {
     setPanelLayoutMessage("Panel layout cleared.");
   }, []);
 
+  const applyBestMaximumPanels = useCallback(() => {
+    if (!solarUnlocked) {
+      setPanelLayoutMessage(solarUnlockMessage);
+      return;
+    }
+
+    const roofMax = plannerFinancials.roofMaxPanelCount;
+    if (roofMax === null || roofMax <= 0) {
+      setPanelLayoutMessage("Roof capacity is still calculating. Try again once the roof max appears.");
+      return;
+    }
+
+    const bestCount = Math.min(Math.max(1, plannerFinancials.recommendedPanelCount), roofMax);
+    setPanelTargetManuallySet(true);
+    setPanelTargetCount(bestCount);
+    setPanelLayoutMessage(
+      `Best maximum selected: ${bestCount} panel(s) for the strongest cost-to-solar tradeoff on this roof.`
+    );
+  }, [plannerFinancials.recommendedPanelCount, plannerFinancials.roofMaxPanelCount, solarUnlockMessage, solarUnlocked]);
+
   useEffect(() => {
     plannerSyncRunRef.current += 1;
     const runId = plannerSyncRunRef.current;
@@ -804,7 +824,7 @@ export default function App() {
           onPanelLayoutModeChange={setPanelLayoutMode}
           panelTargetCount={panelTargetCount}
           onPanelTargetCountChange={handlePanelTargetCountChange}
-          onAutoPackPanels={autoPackPanelLayout}
+          onApplyBestMaximumPanels={applyBestMaximumPanels}
           onClearPanels={clearAllPanels}
           placedPanelCount={placedPanels.length}
           estimatedPanelKw={estimatedPanelKw}
