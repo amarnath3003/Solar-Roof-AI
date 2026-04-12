@@ -1,6 +1,7 @@
 import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
 import { SolarFinancialDashboard } from "@/components/SolarFinancialDashboard";
+import { FinancialSidebarPanel } from "@/components/FinancialSidebarPanel";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { Button, Card } from "@/components/ui/glass";
 import { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
@@ -114,8 +115,12 @@ type WorkspaceDataPanelProps = {
   placedPanelCount: number;
   estimatedPanelKw: number;
   panelLayoutMessage: string | null;
-  exclusionZoneCount: number;
-  hasPrimaryRoof: boolean;
+  plannerInputs: SolarFinancialInputs;
+  plannerFinancials: SolarFinancialResults;
+  plannerSyncState: PlannerSyncState;
+  plannerSyncMessage: string;
+  onPlannerInputChange: (field: PlannerInputField, value: number, min: number, max: number) => void;
+  onResetPlannerInputs: () => void;
 };
 
 function formatSqFt(value: number) {
@@ -363,6 +368,12 @@ function WorkspaceDataPanel({
   panelLayoutMessage,
   exclusionZoneCount,
   hasPrimaryRoof,
+  plannerInputs,
+  plannerFinancials,
+  plannerSyncState,
+  plannerSyncMessage,
+  onPlannerInputChange,
+  onResetPlannerInputs,
 }: WorkspaceDataPanelProps) {
   return (
     <div className="mt-4 flex min-h-0 w-full shrink-0 animate-fade-in-up flex-col overflow-hidden lg:mt-0 lg:h-full lg:w-[19rem] xl:w-[20.5rem]">
@@ -512,6 +523,17 @@ function WorkspaceDataPanel({
               hasPrimaryRoof={hasPrimaryRoof}
             />
 
+            <FinancialSidebarPanel
+              inputs={plannerInputs}
+              financials={plannerFinancials}
+              panelTypeId={panelTypeId}
+              placedPanelCount={placedPanelCount}
+              syncState={plannerSyncState}
+              syncMessage={plannerSyncMessage}
+              onInputChange={onPlannerInputChange}
+              onReset={onResetPlannerInputs}
+            />
+
             <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
               <SectionTitle icon={<Monitor size={14} className="text-white" />} title="Activity Log" />
               <div className="custom-scrollbar max-h-64 overflow-y-auto rounded-2xl border border-white/5 bg-black/40 p-3">
@@ -646,23 +668,16 @@ export function WorkspaceContent({
               panelLayoutMessage={panelLayoutMessage}
               exclusionZoneCount={exclusionZoneCount}
               hasPrimaryRoof={hasPrimaryRoof}
+              plannerInputs={plannerInputs}
+              plannerFinancials={plannerFinancials}
+              plannerSyncState={plannerSyncState}
+              plannerSyncMessage={plannerSyncMessage}
+              onPlannerInputChange={onPlannerInputChange}
+              onResetPlannerInputs={onResetPlannerInputs}
             />
           )}
         </div>
       </WorkspaceErrorBoundary>
-
-      {showMapTools ? (
-        <SolarFinancialDashboard
-          inputs={plannerInputs}
-          financials={plannerFinancials}
-          panelTypeId={panelTypeId}
-          placedPanelCount={placedPanelCount}
-          syncState={plannerSyncState}
-          syncMessage={plannerSyncMessage}
-          onInputChange={onPlannerInputChange}
-          onReset={onResetPlannerInputs}
-        />
-      ) : null}
     </div>
   );
 }
