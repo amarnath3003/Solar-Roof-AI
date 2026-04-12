@@ -1,7 +1,7 @@
 import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
-import { SolarFinancialDashboard } from "@/components/SolarFinancialDashboard";
 import { FinancialSidebarPanel } from "@/components/FinancialSidebarPanel";
+import { SolarPotentialOverlay } from "@/components/SolarPotentialOverlay";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { Button, Card } from "@/components/ui/glass";
 import { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
@@ -70,21 +70,7 @@ type WorkspaceContentProps = {
   onResetPlannerInputs: () => void;
 };
 
-type PanelLayoutPanelProps = {
-  panelTypeId: PanelTypeId;
-  onPanelTypeChange: (next: PanelTypeId) => void;
-  panelLayoutMode: PanelLayoutMode;
-  onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
-  autoPackPanelLimit: number;
-  onAutoPackPanelLimitChange: (next: number) => void;
-  onAutoPackPanels: () => void;
-  onClearPanels: () => void;
-  placedPanelCount: number;
-  estimatedPanelKw: number;
-  panelLayoutMessage: string | null;
-  exclusionZoneCount: number;
-  hasPrimaryRoof: boolean;
-};
+
 
 type WorkspaceDataPanelProps = {
   roofElements: RoofElement[];
@@ -115,6 +101,8 @@ type WorkspaceDataPanelProps = {
   placedPanelCount: number;
   estimatedPanelKw: number;
   panelLayoutMessage: string | null;
+  exclusionZoneCount: number;
+  hasPrimaryRoof: boolean;
   plannerInputs: SolarFinancialInputs;
   plannerFinancials: SolarFinancialResults;
   plannerSyncState: PlannerSyncState;
@@ -196,146 +184,20 @@ function EmptyState() {
 
 function MapViewport({
   mapContainerRef,
+  children,
 }: {
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
+  children?: React.ReactNode;
 }) {
   return (
     <Card className="relative h-full min-h-[25rem] overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl lg:min-h-[35rem]">
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full bg-black" />
+      {children}
     </Card>
   );
 }
 
-function PanelLayoutPanel({
-  panelTypeId,
-  onPanelTypeChange,
-  panelLayoutMode,
-  onPanelLayoutModeChange,
-  autoPackPanelLimit,
-  onAutoPackPanelLimitChange,
-  onAutoPackPanels,
-  onClearPanels,
-  placedPanelCount,
-  estimatedPanelKw,
-  panelLayoutMessage,
-  exclusionZoneCount,
-  hasPrimaryRoof,
-}: PanelLayoutPanelProps) {
-  return (
-    <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
-      <SectionTitle icon={<Square size={14} className="text-white" />} title="Panel Layout" />
 
-      <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-        <div className="mb-2 text-[10px] uppercase tracking-[0.14em] text-zinc-400">Panel type</div>
-        <select
-          value={panelTypeId}
-          onChange={(event) => onPanelTypeChange(event.target.value as PanelTypeId)}
-          className="h-11 w-full rounded-xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none transition focus:border-cyan-300/40"
-        >
-          {Object.values(PANEL_TYPES).map((panelType) => (
-            <option key={panelType.id} value={panelType.id} className="bg-zinc-950 text-white">
-              {panelType.label} ({panelType.heightM}m x {panelType.widthM}m)
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Placement mode</div>
-          <div className="text-[10px] uppercase tracking-[0.14em] text-cyan-200">
-            {panelLayoutMode === "manual" ? "Manual stamp" : "Auto-pack"}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/30 p-1">
-          <button
-            type="button"
-            onClick={() => onPanelLayoutModeChange("manual")}
-            className={`rounded-xl px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition ${
-              panelLayoutMode === "manual"
-                ? "bg-emerald-400/20 text-emerald-100 border border-emerald-300/35"
-                : "text-zinc-400 border border-transparent hover:text-white hover:bg-white/5"
-            }`}
-          >
-            Manual
-          </button>
-          <button
-            type="button"
-            onClick={() => onPanelLayoutModeChange("auto")}
-            className={`rounded-xl px-3 py-2 text-[10px] uppercase tracking-[0.14em] transition ${
-              panelLayoutMode === "auto"
-                ? "bg-cyan-400/20 text-cyan-100 border border-cyan-300/35"
-                : "text-zinc-400 border border-transparent hover:text-white hover:bg-white/5"
-            }`}
-          >
-            Auto
-          </button>
-        </div>
-        <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
-          {panelLayoutMode === "manual"
-            ? "Hover the roof in satellite view to preview each panel stamp before clicking to place it."
-            : "Pack a grid inside the main roof while respecting edge setbacks and all exclusion shapes."}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-emerald-300/15 bg-emerald-500/10 p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-emerald-100">Max auto-pack panels</div>
-          <div className="text-sm text-white">{autoPackPanelLimit}</div>
-        </div>
-        <input
-          type="range"
-          min={1}
-          max={25}
-          step={1}
-          value={autoPackPanelLimit}
-          onChange={(event) => onAutoPackPanelLimitChange(Number(event.target.value))}
-          className="mt-3 w-full accent-emerald-400"
-        />
-        <div className="mt-3 text-[10px] uppercase tracking-[0.14em] text-emerald-100/75 leading-relaxed">
-          Auto-pack will place up to this many panels and favor the greener solar cells first.
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Total Panels Placed</div>
-          <div className="mt-2 text-2xl font-light text-white">{placedPanelCount}</div>
-        </div>
-        <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-sky-200">Estimated kW</div>
-          <div className="mt-2 text-2xl font-light text-white">{estimatedPanelKw.toFixed(1)}</div>
-        </div>
-      </div>
-
-      <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 leading-relaxed">
-        {hasPrimaryRoof
-          ? `Primary roof ready with ${exclusionZoneCount} exclusion zone(s) intersecting it.`
-          : "Draw one main roof polygon first, then add smaller inner lines or shapes to create exclusion zones."}
-      </div>
-
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Button variant="primary" className="h-9 w-full" onClick={onAutoPackPanels} disabled={!hasPrimaryRoof}>
-          <Square size={14} /> Auto-Pack Panels
-        </Button>
-        <Button
-          variant="ghost"
-          className="h-9 w-full border border-transparent hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-300 text-red-400"
-          onClick={onClearPanels}
-          disabled={placedPanelCount === 0}
-        >
-          <Trash2 size={14} /> Clear Panels
-        </Button>
-      </div>
-
-      {panelLayoutMessage && (
-        <div className="rounded-2xl border border-sky-300/20 bg-sky-500/10 px-4 py-3 text-[10px] uppercase tracking-[0.12em] text-sky-100 leading-relaxed">
-          {panelLayoutMessage}
-        </div>
-      )}
-    </section>
-  );
-}
 
 function WorkspaceDataPanel({
   roofElements,
@@ -507,22 +369,6 @@ function WorkspaceDataPanel({
 
             {solarOverlayEnabled && solarHeatmap && <SolarOverlayPanel solarHeatmap={solarHeatmap} />}
 
-            <PanelLayoutPanel
-              panelTypeId={panelTypeId}
-              onPanelTypeChange={onPanelTypeChange}
-              panelLayoutMode={panelLayoutMode}
-              onPanelLayoutModeChange={onPanelLayoutModeChange}
-              autoPackPanelLimit={autoPackPanelLimit}
-              onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
-              onAutoPackPanels={onAutoPackPanels}
-              onClearPanels={onClearPanels}
-              placedPanelCount={placedPanelCount}
-              estimatedPanelKw={estimatedPanelKw}
-              panelLayoutMessage={panelLayoutMessage}
-              exclusionZoneCount={exclusionZoneCount}
-              hasPrimaryRoof={hasPrimaryRoof}
-            />
-
             <FinancialSidebarPanel
               inputs={plannerInputs}
               financials={plannerFinancials}
@@ -532,6 +378,14 @@ function WorkspaceDataPanel({
               syncMessage={plannerSyncMessage}
               onInputChange={onPlannerInputChange}
               onReset={onResetPlannerInputs}
+              autoPackPanelLimit={autoPackPanelLimit}
+              onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
+              onAutoPackPanels={onAutoPackPanels}
+              onPanelTypeChange={onPanelTypeChange}
+              panelLayoutMode={panelLayoutMode}
+              onPanelLayoutModeChange={onPanelLayoutModeChange}
+              onClearPanels={onClearPanels}
+              panelLayoutMessage={panelLayoutMessage}
             />
 
             <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
@@ -635,7 +489,9 @@ export function WorkspaceContent({
             showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
           }`}
         >
-          <MapViewport mapContainerRef={mapContainerRef} />
+          <MapViewport mapContainerRef={mapContainerRef}>
+            {showMapTools && <SolarPotentialOverlay financials={plannerFinancials} />}
+          </MapViewport>
           {showMapTools && (
             <WorkspaceDataPanel
               roofElements={roofElements}
