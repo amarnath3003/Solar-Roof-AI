@@ -471,11 +471,12 @@ function selectPreferredPanels(
   solarHeatmap?: SolarHeatmap | null
 ) {
   const selectedPanels = candidatePanels
-    .slice(0, Math.min(candidatePanels.length, maxPanels))
     .map((panel) => ({
       panel,
       score: getPanelSolarScore(panel, solarHeatmap),
-    }));
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, Math.min(candidatePanels.length, maxPanels));
 
   return {
     panels: selectedPanels.map(({ panel }) => panel),
