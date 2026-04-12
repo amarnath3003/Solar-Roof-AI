@@ -161,31 +161,63 @@ export function useLeafletDraw(
 
   const handleDrawEdited = useCallback((e: any) => {
     if (!featureGroupRef.current) return;
+
+    const editedObstaclePositions = new Map<number, [number, number]>();
+    const editedRoofFeatures = new Map<number, GeoJSON.Feature>();
+
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
       if (layer instanceof L.Marker) {
         const position = layer.getLatLng();
-        setObstacleMarkers((prev) =>
-          prev.map((obs) => (obs.layerId === id ? { ...obs, position: [position.lat, position.lng] } : obs))
-        );
+        editedObstaclePositions.set(id, [position.lat, position.lng]);
         return;
       }
-      setRoofElements((prev) =>
-        prev.map((el) => (el.layerId === id ? { ...el, geoJSON: serializeLayerToGeoJSON(layer) } : el))
-      );
+
+      editedRoofFeatures.set(id, serializeLayerToGeoJSON(layer));
     });
+
+    if (editedObstaclePositions.size > 0) {
+      setObstacleMarkers((prev) =>
+        prev.map((obs) => {
+          const nextPosition = editedObstaclePositions.get(obs.layerId);
+          return nextPosition ? { ...obs, position: nextPosition } : obs;
+        })
+      );
+    }
+
+    if (editedRoofFeatures.size > 0) {
+      setRoofElements((prev) =>
+        prev.map((el) => {
+          const nextGeoJSON = editedRoofFeatures.get(el.layerId);
+          return nextGeoJSON ? { ...el, geoJSON: nextGeoJSON } : el;
+        })
+      );
+    }
   }, [setObstacleMarkers, setRoofElements]);
 
   const handleDrawDeleted = useCallback((e: any) => {
     if (!featureGroupRef.current) return;
+
+    const deletedObstacleLayerIds = new Set<number>();
+    const deletedRoofLayerIds = new Set<number>();
+
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
       if (layer instanceof L.Marker) {
-        setObstacleMarkers((prev) => prev.filter((obs) => obs.layerId !== id));
+        deletedObstacleLayerIds.add(id);
         return;
       }
-      setRoofElements((prev) => prev.filter((el) => el.layerId !== id));
+
+      deletedRoofLayerIds.add(id);
     });
+
+    if (deletedObstacleLayerIds.size > 0) {
+      setObstacleMarkers((prev) => prev.filter((obs) => !deletedObstacleLayerIds.has(obs.layerId)));
+    }
+
+    if (deletedRoofLayerIds.size > 0) {
+      setRoofElements((prev) => prev.filter((el) => !deletedRoofLayerIds.has(el.layerId)));
+    }
   }, [setObstacleMarkers, setRoofElements]);
 
   const setupMapIfNeeded = useCallback(() => {

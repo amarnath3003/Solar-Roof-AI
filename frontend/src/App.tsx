@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
 
 import "leaflet/dist/leaflet.css";
@@ -8,12 +8,11 @@ import { WorkspaceContent } from "@/components/Workspace";
 import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
+import { usePanelLayoutWorker } from "@/hooks/usePanelLayoutWorker";
 import { SolarFinancialInputs, useSolarFinancials } from "@/hooks/useSolarFinancials";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import {
   PANEL_TYPES,
-  autoPackPanels,
-  autoPackPanelsToCapacity,
   buildPanelLayoutContext,
   getRoofOutlineAlignmentAngleDegrees,
   validatePanelPlacement,
@@ -123,6 +122,14 @@ function createPlacedPanelRecord(
   };
 }
 
+function logDevPerf(label: string, durationMs: number, detail: string) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
+  console.info(`[perf] ${label}: ${durationMs.toFixed(1)}ms | ${detail}`);
+}
+
 export default function App() {
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
   const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
@@ -141,11 +148,15 @@ export default function App() {
   const [layoutFinished, setLayoutFinished] = useState(false);
   const [placedPanels, setPlacedPanels] = useState<PlacedPanel[]>([]);
   const [panelLayoutMessage, setPanelLayoutMessage] = useState<string | null>(null);
+  const [roofMaxPanelCount, setRoofMaxPanelCount] = useState<number | null>(null);
+  const [plannerCapacityError, setPlannerCapacityError] = useState<string | null>(null);
   const [plannerInputs, setPlannerInputs] = useState<SolarFinancialInputs>(DEFAULT_PLANNER_INPUTS);
   const [plannerSyncState, setPlannerSyncState] = useState<PlannerSyncState>("estimate");
   const [plannerSyncMessage, setPlannerSyncMessage] = useState(
     "Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout."
   );
+  const plannerSyncRunRef = useRef(0);
+  const capacityRunRef = useRef(0);
 
   const {
     address,
@@ -168,6 +179,7 @@ export default function App() {
     error: detectionError,
     clearError: clearDetectionError,
   } = useAutoRoofDetection();
+  const { runAutoPackTask, runCapacityTask } = usePanelLayoutWorker();
 
   const activeRoofFootprint = getActiveRoofFootprint(roofElements);
   const panelLayoutContext = useMemo(
@@ -197,45 +209,58 @@ export default function App() {
     activeRoofFootprint?.slope?.aspectDegrees ??
     solarAnalysis?.alignmentAngleDegrees ??
     180;
-  const plannerCapacityAnalysis = useMemo(() => {
-    if (!showMapTools || !layoutFinished || !panelLayoutContext.primaryRoof) {
-      return {
-        result: null,
-        error: null as string | null,
-      };
-    }
-
-    try {
-      return {
-        result: autoPackPanelsToCapacity(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
-          // Capacity checks only need maximum fit count, not solar-zone scoring.
-        }),
-        error: null as string | null,
-      };
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error("Roof-aware planner capacity calculation failed.", error);
-      }
-
-      return {
-        result: null,
-        error: error instanceof Error ? error.message : "Planner capacity calculation failed.",
-      };
-    }
-  }, [layoutFinished, panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, showMapTools]);
   const hasPrimaryRoof = panelLayoutContext.primaryRoof !== null;
   const areaReady = (roofAreaSummary?.netSqFt ?? 0) > 0;
   const solarUnlocked = showMapTools && hasPrimaryRoof && layoutFinished && areaReady;
   const panelFootprintSqFt = PANEL_TYPES[panelTypeId].widthM * PANEL_TYPES[panelTypeId].heightM * 10.7639;
   const plannerFinancials = useSolarFinancials({
     ...plannerInputs,
-    roofMaxPanelCount: plannerCapacityAnalysis.result?.panelCount ?? null,
+    roofMaxPanelCount,
     roofNetSqFt: roofAreaSummary?.netSqFt ?? null,
     roofBlockedSqFt: roofAreaSummary?.blockedSqFt ?? null,
     selectedPanelCount: solarUnlocked ? panelTargetCount : null,
     panelFootprintSqFt,
     performanceRatio: 0.82,
   });
+
+  useEffect(() => {
+    capacityRunRef.current += 1;
+    const runId = capacityRunRef.current;
+
+    if (!showMapTools || !layoutFinished || !panelLayoutContext.primaryRoof) {
+      setRoofMaxPanelCount(null);
+      setPlannerCapacityError(null);
+      return;
+    }
+
+    setPlannerCapacityError(null);
+
+    runCapacityTask({
+      context: panelLayoutContext,
+      panelTypeId,
+      alignmentAngleDegrees: panelAlignmentAngleDegrees,
+    })
+      .then(({ payload, durationMs }) => {
+        if (capacityRunRef.current !== runId) {
+          return;
+        }
+
+        setRoofMaxPanelCount(payload.panelCount);
+        logDevPerf("capacity-pack", durationMs, `maxPanels=${payload.panelCount}`);
+      })
+      .catch((error) => {
+        if (capacityRunRef.current !== runId) {
+          return;
+        }
+
+        if (import.meta.env.DEV) {
+          console.error("Roof-aware planner capacity calculation failed.", error);
+        }
+
+        setRoofMaxPanelCount(null);
+        setPlannerCapacityError(error instanceof Error ? error.message : "Planner capacity calculation failed.");
+      });
+  }, [layoutFinished, panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, runCapacityTask, showMapTools]);
 
   const handlePlaceManualPanel = useCallback(
     (feature: GeoJSON.Feature<GeoJSON.Polygon>) => {
@@ -380,6 +405,8 @@ export default function App() {
     setPanelTargetCount(25);
     setPanelTargetManuallySet(false);
     setPanelLayoutMessage(null);
+    setRoofMaxPanelCount(null);
+    setPlannerCapacityError(null);
     setPlannerSyncState("estimate");
     setPlannerSyncMessage("Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout.");
     clearDetectionPreview();
@@ -454,13 +481,15 @@ export default function App() {
     setPanelTargetCount(25);
     setPanelTargetManuallySet(false);
     setPanelLayoutMessage(null);
+    setRoofMaxPanelCount(null);
+    setPlannerCapacityError(null);
   };
 
   const exportGeoJson = () => {
     downloadRoofData(roofElements, obstacleMarkers);
   };
 
-  const autoPackPanelLayout = useCallback(() => {
+  const autoPackPanelLayout = useCallback(async () => {
     setPanelLayoutMode("auto");
 
     if (!solarUnlocked) {
@@ -479,23 +508,38 @@ export default function App() {
       return;
     }
 
-    const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
-      maxPanels: panelTargetCount,
-      solarHeatmap: solarAnalysis,
-    });
-    setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
+    try {
+      const { payload, durationMs } = await runAutoPackTask({
+        context: panelLayoutContext,
+        panelTypeId,
+        alignmentAngleDegrees: panelAlignmentAngleDegrees,
+        maxPanels: panelTargetCount,
+        solarHeatmap: solarAnalysis,
+      });
+      const { panels } = payload;
 
-    if (panels.length === 0) {
-      setPanelLayoutMessage("No valid panel placements were found inside the roof after exclusions and edge checks.");
-      return;
+      setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
+      logDevPerf("manual-auto-pack", durationMs, `panels=${panels.length} target=${panelTargetCount}`);
+
+      if (panels.length === 0) {
+        setPanelLayoutMessage("No valid panel placements were found inside the roof after exclusions and edge checks.");
+        return;
+      }
+
+      setPanelLayoutMessage(
+        solarAnalysis
+          ? `Auto-packed ${panels.length} panel(s), prioritizing greener solar zones and staying within your ${panelTargetCount}-panel target.`
+          : `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s) and staying within your ${panelTargetCount}-panel target.`
+      );
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("Manual auto-pack failed.", error);
+      }
+
+      setPlacedPanels([]);
+      setPanelLayoutMessage("Auto-pack failed unexpectedly. Adjust geometry and try again.");
     }
-
-    setPanelLayoutMessage(
-      solarAnalysis
-        ? `Auto-packed ${panels.length} panel(s), prioritizing greener solar zones and staying within your ${panelTargetCount}-panel target.`
-        : `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s) and staying within your ${panelTargetCount}-panel target.`
-    );
-  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTargetCount, panelTypeId, solarAnalysis, solarUnlockMessage, solarUnlocked]);
+  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTargetCount, panelTypeId, runAutoPackTask, solarAnalysis, solarUnlockMessage, solarUnlocked]);
 
   const clearAllPanels = useCallback(() => {
     setPlacedPanels([]);
@@ -503,11 +547,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    plannerSyncRunRef.current += 1;
+    const runId = plannerSyncRunRef.current;
+
     if (!showMapTools) {
       return;
     }
 
-    if (plannerCapacityAnalysis.error) {
+    if (plannerCapacityError) {
       setPlannerSyncState("error");
       setPlannerSyncMessage("Planner capacity check failed. The numeric model is still available while layout sync pauses.");
       return;
@@ -535,41 +582,54 @@ export default function App() {
     setPlannerSyncMessage("Repacking panels from the current bill target and roof constraints...");
 
     const syncHandle = window.setTimeout(() => {
-      try {
-        const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
-          maxPanels: plannerFinancials.activePanelCount,
-          solarHeatmap: solarAnalysis,
-        });
+      runAutoPackTask({
+        context: panelLayoutContext,
+        panelTypeId,
+        alignmentAngleDegrees: panelAlignmentAngleDegrees,
+        maxPanels: plannerFinancials.activePanelCount,
+        solarHeatmap: solarAnalysis,
+      })
+        .then(({ payload, durationMs }) => {
+          if (plannerSyncRunRef.current !== runId) {
+            return;
+          }
 
-        setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
+          const { panels } = payload;
+          setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
+          logDevPerf("planner-sync-pack", durationMs, `panels=${panels.length} target=${plannerFinancials.activePanelCount}`);
 
-        if (panels.length === 0) {
-          const emptyMessage = "Current geometry cannot fit the selected panel footprint. Draw more usable roof or switch the footprint.";
+          if (panels.length === 0) {
+            const emptyMessage = "Current geometry cannot fit the selected panel footprint. Draw more usable roof or switch the footprint.";
+            setPlannerSyncState("synced");
+            setPlannerSyncMessage(emptyMessage);
+            setPanelLayoutMessage(emptyMessage);
+            return;
+          }
+
+          const syncMessage = plannerFinancials.roofLimited
+            ? `Roof maxes at ${plannerFinancials.roofMaxPanelCount} panel(s), leaving about ${Math.round(
+                plannerFinancials.monthlyShortfallKwh
+              )} kWh/month on-grid. Layout synced from solar potential analysis.`
+            : `Packing ${panels.length} panel(s) for about ${Math.round(
+                plannerFinancials.energyCoveredDisplayPercent
+              )}% bill coverage. Layout synced from solar potential analysis.`;
+
           setPlannerSyncState("synced");
-          setPlannerSyncMessage(emptyMessage);
-          setPanelLayoutMessage(emptyMessage);
-          return;
-        }
+          setPlannerSyncMessage(syncMessage);
+          setPanelLayoutMessage(syncMessage);
+        })
+        .catch((error) => {
+          if (plannerSyncRunRef.current !== runId) {
+            return;
+          }
 
-        const syncMessage = plannerFinancials.roofLimited
-          ? `Roof maxes at ${plannerFinancials.roofMaxPanelCount} panel(s), leaving about ${Math.round(
-              plannerFinancials.monthlyShortfallKwh
-            )} kWh/month on-grid. Layout synced from solar potential analysis.`
-          : `Packing ${panels.length} panel(s) for about ${Math.round(
-              plannerFinancials.energyCoveredDisplayPercent
-            )}% bill coverage. Layout synced from solar potential analysis.`;
+          if (import.meta.env.DEV) {
+            console.error("Solar potential sync failed.", error);
+          }
 
-        setPlannerSyncState("synced");
-        setPlannerSyncMessage(syncMessage);
-        setPanelLayoutMessage(syncMessage);
-      } catch (error) {
-        if (import.meta.env.DEV) {
-          console.error("Solar potential sync failed.", error);
-        }
-
-        setPlannerSyncState("error");
-        setPlannerSyncMessage("Planner sync hit an unexpected issue. Numeric estimates remain available while map sync pauses.");
-      }
+          setPlannerSyncState("error");
+          setPlannerSyncMessage("Planner sync hit an unexpected issue. Numeric estimates remain available while map sync pauses.");
+        });
     }, 250);
 
     return () => {
@@ -579,7 +639,7 @@ export default function App() {
     showMapTools,
     solarUnlocked,
     solarUnlockMessage,
-    plannerCapacityAnalysis.error,
+    plannerCapacityError,
     panelLayoutContext,
     plannerFinancials.activePanelCount,
     plannerFinancials.roofLimited,
@@ -591,6 +651,7 @@ export default function App() {
     panelTypeId,
     panelAlignmentAngleDegrees,
     solarAnalysis,
+    runAutoPackTask,
   ]);
 
   const runAutoDetection = useCallback(async () => {
