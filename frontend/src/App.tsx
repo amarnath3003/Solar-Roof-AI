@@ -8,8 +8,9 @@ import { WorkspaceContent } from "@/components/Workspace";
 import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
+import { SolarFinancialInputs, useSolarFinancials } from "@/hooks/useSolarFinancials";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
-import { autoPackPanels, buildPanelLayoutContext, getPanelTypeDefinition, validatePanelPlacement } from "@/lib/panelLayout";
+import { autoPackPanels, autoPackPanelsToCapacity, buildPanelLayoutContext, validatePanelPlacement } from "@/lib/panelLayout";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
 import { getActiveRoofFootprint } from "@/lib/sunProjection";
@@ -24,6 +25,20 @@ import {
   RoofElement,
   ViewMode,
 } from "@/types";
+
+type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
+
+const DEFAULT_PLANNER_INPUTS: SolarFinancialInputs = {
+  monthlyUsageKwh: 830,
+  panelCapacityWatts: 400,
+  energyCostPerKwh: 0.18,
+  costPerWatt: 3.2,
+  federalTaxCreditPct: 30,
+};
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: ObstacleMarker[]) {
   const featureCollection: GeoJSON.FeatureCollection = {
