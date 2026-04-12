@@ -216,7 +216,7 @@ export function FinancialSidebarPanel({
                   disabled={isLocked || !hasRoofCapacity}
                   className="shrink-0 h-8 rounded-lg border border-cyan-300/30 bg-cyan-500/20 px-2 text-[10px] uppercase tracking-[0.12em] text-cyan-100 hover:bg-cyan-500/40 disabled:opacity-40"
                 >
-                  Best Maximum
+                  Best ROI
                 </button>
               </div>
               <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500 leading-relaxed">
