@@ -213,12 +213,18 @@ export default function App() {
   const areaReady = (roofAreaSummary?.netSqFt ?? 0) > 0;
   const solarUnlocked = showMapTools && hasPrimaryRoof && layoutFinished && areaReady;
   const panelFootprintSqFt = PANEL_TYPES[panelTypeId].widthM * PANEL_TYPES[panelTypeId].heightM * 10.7639;
+  const selectedPanelCount =
+    solarUnlocked
+      ? panelLayoutMode === "manual"
+        ? placedPanels.length
+        : panelTargetCount
+      : null;
   const plannerFinancials = useSolarFinancials({
     ...plannerInputs,
     roofMaxPanelCount,
     roofNetSqFt: roofAreaSummary?.netSqFt ?? null,
     roofBlockedSqFt: roofAreaSummary?.blockedSqFt ?? null,
-    selectedPanelCount: solarUnlocked ? panelTargetCount : null,
+    selectedPanelCount,
     panelFootprintSqFt,
     performanceRatio: 0.82,
   });
