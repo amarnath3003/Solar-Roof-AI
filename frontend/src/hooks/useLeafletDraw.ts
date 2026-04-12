@@ -118,7 +118,7 @@ export function useLeafletDraw(
     return "unknown";
   };
 
-  const handleDrawCreated = useCallback((e: { layerType: string; layer: L.Layer }) => {
+  const handleDrawCreated = useCallback((e: any) => {
     if (!featureGroupRef.current) return;
     const { layerType, layer } = e;
     featureGroupRef.current.addLayer(layer);
@@ -155,7 +155,7 @@ export function useLeafletDraw(
     ]);
   }, [setObstacleMarkers, setRoofElements]);
 
-  const handleDrawEdited = useCallback((e: { layers: L.LayerGroup }) => {
+  const handleDrawEdited = useCallback((e: any) => {
     if (!featureGroupRef.current) return;
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
@@ -172,7 +172,7 @@ export function useLeafletDraw(
     });
   }, [setObstacleMarkers, setRoofElements]);
 
-  const handleDrawDeleted = useCallback((e: { layers: L.LayerGroup }) => {
+  const handleDrawDeleted = useCallback((e: any) => {
     if (!featureGroupRef.current) return;
     e.layers.eachLayer((layer: L.Layer) => {
       const id = featureGroupRef.current!.getLayerId(layer);
