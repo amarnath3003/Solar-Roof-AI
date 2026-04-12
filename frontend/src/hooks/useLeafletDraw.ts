@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet-draw";
 import { circle as turfCircle } from "@turf/turf";
@@ -104,6 +104,9 @@ export function useLeafletDraw(
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
   const monochromeLayerRef = useRef<L.TileLayer | null>(null);
   const satelliteLayerRef = useRef<L.TileLayer | null>(null);
+  const drawToolStartHandlerRef = useRef<(() => void) | null>(null);
+  const drawToolStopHandlerRef = useRef<(() => void) | null>(null);
+  const [isDrawToolActive, setIsDrawToolActive] = useState(false);
   const { context, mode, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
 
   const getGeometryType = (layer: L.Layer) => {
@@ -255,6 +258,11 @@ export function useLeafletDraw(
   const syncDrawTools = useCallback(() => {
     if (!mapRef.current || !featureGroupRef.current) return;
     const map = mapRef.current;
+
+    const syncActiveToolState = () => {
+      setIsDrawToolActive(hasActiveDrawTool(map));
+    };
+
     if (showMapTools && !drawControlRef.current) {
       const drawControl = new (L.Control as any).Draw({
         position: "topright",
@@ -277,13 +285,35 @@ export function useLeafletDraw(
       map.on((L as any).Draw.Event.CREATED, handleDrawCreated);
       map.on((L as any).Draw.Event.EDITED, handleDrawEdited);
       map.on((L as any).Draw.Event.DELETED, handleDrawDeleted);
+      drawToolStartHandlerRef.current = syncActiveToolState;
+      drawToolStopHandlerRef.current = () => window.setTimeout(syncActiveToolState, 0);
+      map.on("draw:drawstart", drawToolStartHandlerRef.current);
+      map.on("draw:drawstop", drawToolStopHandlerRef.current);
+      map.on("draw:editstart", drawToolStartHandlerRef.current);
+      map.on("draw:editstop", drawToolStopHandlerRef.current);
+      map.on("draw:deletestart", drawToolStartHandlerRef.current);
+      map.on("draw:deletestop", drawToolStopHandlerRef.current);
       drawControlRef.current = drawControl;
+      syncActiveToolState();
     } else if (!showMapTools && drawControlRef.current) {
       map.removeControl(drawControlRef.current);
       map.off((L as any).Draw.Event.CREATED, handleDrawCreated);
       map.off((L as any).Draw.Event.EDITED, handleDrawEdited);
       map.off((L as any).Draw.Event.DELETED, handleDrawDeleted);
+      if (drawToolStartHandlerRef.current) {
+        map.off("draw:drawstart", drawToolStartHandlerRef.current);
+        map.off("draw:editstart", drawToolStartHandlerRef.current);
+        map.off("draw:deletestart", drawToolStartHandlerRef.current);
+      }
+      if (drawToolStopHandlerRef.current) {
+        map.off("draw:drawstop", drawToolStopHandlerRef.current);
+        map.off("draw:editstop", drawToolStopHandlerRef.current);
+        map.off("draw:deletestop", drawToolStopHandlerRef.current);
+      }
       drawControlRef.current = null;
+      drawToolStartHandlerRef.current = null;
+      drawToolStopHandlerRef.current = null;
+      setIsDrawToolActive(false);
     }
   }, [handleDrawCreated, handleDrawDeleted, handleDrawEdited, showMapTools]);
 
@@ -338,6 +368,8 @@ export function useLeafletDraw(
       locationMarkerRef.current = null;
       monochromeLayerRef.current = null;
       satelliteLayerRef.current = null;
+      drawToolStartHandlerRef.current = null;
+      drawToolStopHandlerRef.current = null;
     };
   }, []);
 
@@ -612,5 +644,6 @@ export function useLeafletDraw(
     showDetectionPreview,
     clearDetectionPreview,
     acceptDetectionPreview,
+    isDrawToolActive,
   };
 }
