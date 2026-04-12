@@ -506,7 +506,7 @@ export function WorkspaceContent({
         description="The map workspace failed to render for this location. Try searching again or toggling the sidebar once more."
       >
         <div
-          className={`grid min-h-[25rem] shrink-0 grid-cols-1 gap-4 items-stretch ${
+          className={`grid h-full min-h-[25rem] shrink-0 grid-cols-1 gap-4 items-stretch ${
             showMapTools ? "lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_18rem]" : ""
           }`}
         >
