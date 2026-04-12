@@ -10,7 +10,7 @@ import { useAddressSearch } from "@/hooks/useAddressSearch";
 import { useLeafletDraw } from "@/hooks/useLeafletDraw";
 import { SolarFinancialInputs, useSolarFinancials } from "@/hooks/useSolarFinancials";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
-import { autoPackPanels, autoPackPanelsToCapacity, buildPanelLayoutContext, validatePanelPlacement } from "@/lib/panelLayout";
+import { PANEL_TYPES, autoPackPanels, autoPackPanelsToCapacity, buildPanelLayoutContext, validatePanelPlacement } from "@/lib/panelLayout";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
 import { getActiveRoofFootprint } from "@/lib/sunProjection";
@@ -124,7 +124,9 @@ export default function App() {
   const [solarOverlayEnabled, setSolarOverlayEnabled] = useState(false);
   const [panelTypeId, setPanelTypeId] = useState<PanelTypeId>("standard-residential");
   const [panelLayoutMode, setPanelLayoutMode] = useState<PanelLayoutMode>("auto");
-  const [autoPackPanelLimit, setAutoPackPanelLimit] = useState(25);
+  const [panelTargetCount, setPanelTargetCount] = useState(25);
+  const [panelTargetManuallySet, setPanelTargetManuallySet] = useState(false);
+  const [layoutFinished, setLayoutFinished] = useState(false);
   const [placedPanels, setPlacedPanels] = useState<PlacedPanel[]>([]);
   const [panelLayoutMessage, setPanelLayoutMessage] = useState<string | null>(null);
   const [plannerInputs, setPlannerInputs] = useState<SolarFinancialInputs>(DEFAULT_PLANNER_INPUTS);
@@ -201,9 +203,18 @@ export default function App() {
       };
     }
   }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, solarAnalysis]);
+  const hasPrimaryRoof = panelLayoutContext.primaryRoof !== null;
+  const areaReady = (roofAreaSummary?.netSqFt ?? 0) > 0;
+  const solarUnlocked = showMapTools && hasPrimaryRoof && layoutFinished && areaReady;
+  const panelFootprintSqFt = PANEL_TYPES[panelTypeId].widthM * PANEL_TYPES[panelTypeId].heightM * 10.7639;
   const plannerFinancials = useSolarFinancials({
     ...plannerInputs,
     roofMaxPanelCount: plannerCapacityAnalysis.result?.panelCount ?? null,
+    roofNetSqFt: roofAreaSummary?.netSqFt ?? null,
+    roofBlockedSqFt: roofAreaSummary?.blockedSqFt ?? null,
+    selectedPanelCount: solarUnlocked ? panelTargetCount : null,
+    panelFootprintSqFt,
+    performanceRatio: 0.82,
   });
 
   const handlePlaceManualPanel = useCallback(
@@ -224,12 +235,19 @@ export default function App() {
         ...current,
         [field]: clampValue(value, min, max),
       }));
+      setPanelTargetManuallySet(false);
     },
     []
   );
 
+  const handlePanelTargetCountChange = useCallback((next: number) => {
+    setPanelTargetManuallySet(true);
+    setPanelTargetCount(Math.max(1, Math.floor(next)));
+  }, []);
+
   const resetPlannerInputs = useCallback(() => {
     setPlannerInputs(DEFAULT_PLANNER_INPUTS);
+    setPanelTargetManuallySet(false);
   }, []);
 
   const {
@@ -257,12 +275,79 @@ export default function App() {
     }
   );
 
+  const solarUnlockMessage = useMemo(() => {
+    if (!hasPrimaryRoof) {
+      return "Draw a primary roof polygon to start solar potential analysis.";
+    }
+
+    if (isDrawToolActive) {
+      return "Finish drawing or editing roof geometry to continue.";
+    }
+
+    if (!layoutFinished) {
+      return "Locking roof layout...";
+    }
+
+    if (!areaReady) {
+      return "Calculating roof square footage before unlocking solar potential...";
+    }
+
+    return "Solar potential unlocked and synced with roof constraints.";
+  }, [areaReady, hasPrimaryRoof, isDrawToolActive, layoutFinished]);
+
+  useEffect(() => {
+    if (!showMapTools || !hasPrimaryRoof || isDrawToolActive) {
+      setLayoutFinished(false);
+      return;
+    }
+
+    const finishHandle = window.setTimeout(() => {
+      setLayoutFinished(true);
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(finishHandle);
+    };
+  }, [hasPrimaryRoof, isDrawToolActive, obstacleMarkers, roofElements, showMapTools]);
+
+  useEffect(() => {
+    if (!showMapTools || !layoutFinished || !hasPrimaryRoof || isDrawToolActive) {
+      return;
+    }
+
+    const areaHandle = window.setTimeout(() => {
+      const summary = calculateRoofAreaSummary(featureGroupRef.current);
+
+      if (!summary) {
+        setRoofAreaSummary(null);
+        setRoofAreaMessage("Draw at least one roof polygon, rectangle, or circle before solar potential unlocks.");
+        return;
+      }
+
+      setRoofAreaSummary(summary);
+
+      if (summary.netSqFt <= 0) {
+        setRoofAreaMessage("Usable roof area is zero after obstacle clearance. Adjust the layout to unlock solar potential.");
+        return;
+      }
+
+      setRoofAreaMessage(`Area auto-calculated: ${Math.round(summary.netSqFt)} sq ft net usable.`);
+    }, 120);
+
+    return () => {
+      window.clearTimeout(areaHandle);
+    };
+  }, [featureGroupRef, hasPrimaryRoof, isDrawToolActive, layoutFinished, obstacleMarkers, roofElements, showMapTools]);
+
   useEffect(() => {
     setDetectionPreview(null);
     setDetectionMessage(null);
     setRoofAreaSummary(null);
     setRoofAreaMessage(null);
+    setLayoutFinished(false);
     setPlacedPanels([]);
+    setPanelTargetCount(25);
+    setPanelTargetManuallySet(false);
     setPanelLayoutMessage(null);
     setPlannerSyncState("estimate");
     setPlannerSyncMessage("Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout.");
@@ -274,6 +359,35 @@ export default function App() {
     setRoofAreaSummary(null);
     setRoofAreaMessage(null);
   }, [roofElements, obstacleMarkers]);
+
+  useEffect(() => {
+    if (!solarUnlocked) {
+      setPanelTargetManuallySet(false);
+      return;
+    }
+
+    if (!panelTargetManuallySet) {
+      setPanelTargetCount(Math.max(1, plannerFinancials.recommendedPanelCount));
+    }
+  }, [panelTargetManuallySet, plannerFinancials.recommendedPanelCount, solarUnlocked]);
+
+  useEffect(() => {
+    if (!solarUnlocked) {
+      return;
+    }
+
+    const roofMax = plannerFinancials.roofMaxPanelCount;
+    if (roofMax === null) {
+      return;
+    }
+
+    if (roofMax <= 0) {
+      setPanelTargetCount(0);
+      return;
+    }
+
+    setPanelTargetCount((current) => Math.min(Math.max(current, 1), roofMax));
+  }, [plannerFinancials.roofMaxPanelCount, solarUnlocked]);
 
   useEffect(() => {
     if (placedPanels.length === 0) {
@@ -302,9 +416,12 @@ export default function App() {
     setDetectionPreview(null);
     setRoofAreaSummary(null);
     setRoofAreaMessage(null);
+    setLayoutFinished(false);
     setRoofElements([]);
     setObstacleMarkers([]);
     setPlacedPanels([]);
+    setPanelTargetCount(25);
+    setPanelTargetManuallySet(false);
     setPanelLayoutMessage(null);
   };
 
@@ -314,6 +431,11 @@ export default function App() {
 
   const autoPackPanelLayout = useCallback(() => {
     setPanelLayoutMode("auto");
+
+    if (!solarUnlocked) {
+      setPanelLayoutMessage(solarUnlockMessage);
+      return;
+    }
 
     if (!panelLayoutContext.primaryRoof) {
       setPanelLayoutMessage("Draw one primary roof polygon first, then add any inner lines or shapes as exclusion zones.");
@@ -327,7 +449,7 @@ export default function App() {
     }
 
     const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
-      maxPanels: autoPackPanelLimit,
+      maxPanels: panelTargetCount,
       solarHeatmap: solarAnalysis,
     });
     setPlacedPanels(panels.map((feature) => createPlacedPanelRecord(feature, panelTypeId, "auto")));
@@ -339,10 +461,10 @@ export default function App() {
 
     setPanelLayoutMessage(
       solarAnalysis
-        ? `Auto-packed ${panels.length} panel(s), prioritizing the greener solar zones first and staying within the ${autoPackPanelLimit}-panel cap.`
-        : `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s) and staying within the ${autoPackPanelLimit}-panel cap.`
+        ? `Auto-packed ${panels.length} panel(s), prioritizing greener solar zones and staying within your ${panelTargetCount}-panel target.`
+        : `Auto-packed ${panels.length} panel(s) while avoiding ${panelLayoutContext.exclusionZones.length} exclusion zone(s) and staying within your ${panelTargetCount}-panel target.`
     );
-  }, [autoPackPanelLimit, panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, solarAnalysis]);
+  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTargetCount, panelTypeId, solarAnalysis, solarUnlockMessage, solarUnlocked]);
 
   const clearAllPanels = useCallback(() => {
     setPlacedPanels([]);
@@ -360,13 +482,9 @@ export default function App() {
       return;
     }
 
-    if (!panelLayoutContext.primaryRoof) {
+    if (!solarUnlocked) {
       setPlannerSyncState("estimate");
-      setPlannerSyncMessage(
-        `Estimate only: about ${plannerFinancials.targetPanelCount} panel(s) would offset roughly $${plannerFinancials.monthlyBill.toFixed(
-          0
-        )}/month. Draw a primary roof to verify what really fits.`
-      );
+      setPlannerSyncMessage(solarUnlockMessage);
       return;
     }
 
@@ -388,7 +506,7 @@ export default function App() {
     const syncHandle = window.setTimeout(() => {
       try {
         const { panels } = autoPackPanels(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
-          maxPanels: plannerFinancials.recommendedPanelCount,
+          maxPanels: plannerFinancials.activePanelCount,
           solarHeatmap: solarAnalysis,
         });
 
@@ -428,10 +546,13 @@ export default function App() {
     };
   }, [
     showMapTools,
+    solarUnlocked,
+    solarUnlockMessage,
     plannerCapacityAnalysis.error,
     panelLayoutContext,
     plannerFinancials.targetPanelCount,
     plannerFinancials.recommendedPanelCount,
+    plannerFinancials.activePanelCount,
     plannerFinancials.roofLimited,
     plannerFinancials.roofMaxPanelCount,
     plannerFinancials.monthlyShortfallKwh,
@@ -586,15 +707,17 @@ export default function App() {
           onPanelTypeChange={setPanelTypeId}
           panelLayoutMode={panelLayoutMode}
           onPanelLayoutModeChange={setPanelLayoutMode}
-          autoPackPanelLimit={autoPackPanelLimit}
-          onAutoPackPanelLimitChange={setAutoPackPanelLimit}
+          panelTargetCount={panelTargetCount}
+          onPanelTargetCountChange={handlePanelTargetCountChange}
           onAutoPackPanels={autoPackPanelLayout}
           onClearPanels={clearAllPanels}
           placedPanelCount={placedPanels.length}
           estimatedPanelKw={estimatedPanelKw}
           panelLayoutMessage={panelLayoutMessage}
           exclusionZoneCount={panelLayoutContext.exclusionZones.length}
-          hasPrimaryRoof={panelLayoutContext.primaryRoof !== null}
+          hasPrimaryRoof={hasPrimaryRoof}
+          solarUnlocked={solarUnlocked}
+          solarUnlockMessage={solarUnlockMessage}
           plannerInputs={plannerInputs}
           plannerFinancials={plannerFinancials}
           plannerSyncState={plannerSyncState}

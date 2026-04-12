@@ -1,6 +1,6 @@
 import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
-import { FinancialSidebarPanel } from "@/components/FinancialSidebarPanel";
+import { FinancialSidebarPanel } from "./FinancialSidebarPanel";
 import { SolarPotentialOverlay } from "@/components/SolarPotentialOverlay";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { Button, Card } from "@/components/ui/glass";
@@ -53,8 +53,8 @@ type WorkspaceContentProps = {
   onPanelTypeChange: (next: PanelTypeId) => void;
   panelLayoutMode: PanelLayoutMode;
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
-  autoPackPanelLimit: number;
-  onAutoPackPanelLimitChange: (next: number) => void;
+  panelTargetCount: number;
+  onPanelTargetCountChange: (next: number) => void;
   onAutoPackPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
@@ -62,6 +62,8 @@ type WorkspaceContentProps = {
   panelLayoutMessage: string | null;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
+  solarUnlocked: boolean;
+  solarUnlockMessage: string;
   plannerInputs: SolarFinancialInputs;
   plannerFinancials: SolarFinancialResults;
   plannerSyncState: PlannerSyncState;
@@ -94,8 +96,8 @@ type WorkspaceDataPanelProps = {
   onPanelTypeChange: (next: PanelTypeId) => void;
   panelLayoutMode: PanelLayoutMode;
   onPanelLayoutModeChange: (next: PanelLayoutMode) => void;
-  autoPackPanelLimit: number;
-  onAutoPackPanelLimitChange: (next: number) => void;
+  panelTargetCount: number;
+  onPanelTargetCountChange: (next: number) => void;
   onAutoPackPanels: () => void;
   onClearPanels: () => void;
   placedPanelCount: number;
@@ -103,6 +105,8 @@ type WorkspaceDataPanelProps = {
   panelLayoutMessage: string | null;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
+  solarUnlocked: boolean;
+  solarUnlockMessage: string;
   plannerInputs: SolarFinancialInputs;
   plannerFinancials: SolarFinancialResults;
   plannerSyncState: PlannerSyncState;
@@ -221,8 +225,8 @@ function WorkspaceDataPanel({
   onPanelTypeChange,
   panelLayoutMode,
   onPanelLayoutModeChange,
-  autoPackPanelLimit,
-  onAutoPackPanelLimitChange,
+  panelTargetCount,
+  onPanelTargetCountChange,
   onAutoPackPanels,
   onClearPanels,
   placedPanelCount,
@@ -230,6 +234,8 @@ function WorkspaceDataPanel({
   panelLayoutMessage,
   exclusionZoneCount,
   hasPrimaryRoof,
+  solarUnlocked,
+  solarUnlockMessage,
   plannerInputs,
   plannerFinancials,
   plannerSyncState,
@@ -378,14 +384,16 @@ function WorkspaceDataPanel({
               syncMessage={plannerSyncMessage}
               onInputChange={onPlannerInputChange}
               onReset={onResetPlannerInputs}
-              autoPackPanelLimit={autoPackPanelLimit}
-              onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
+              panelTargetCount={panelTargetCount}
+              onPanelTargetCountChange={onPanelTargetCountChange}
               onAutoPackPanels={onAutoPackPanels}
               onPanelTypeChange={onPanelTypeChange}
               panelLayoutMode={panelLayoutMode}
               onPanelLayoutModeChange={onPanelLayoutModeChange}
               onClearPanels={onClearPanels}
               panelLayoutMessage={panelLayoutMessage}
+              isLocked={!solarUnlocked}
+              lockMessage={solarUnlockMessage}
             />
 
             <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
@@ -458,8 +466,8 @@ export function WorkspaceContent({
   onPanelTypeChange,
   panelLayoutMode,
   onPanelLayoutModeChange,
-  autoPackPanelLimit,
-  onAutoPackPanelLimitChange,
+  panelTargetCount,
+  onPanelTargetCountChange,
   onAutoPackPanels,
   onClearPanels,
   placedPanelCount,
@@ -467,6 +475,8 @@ export function WorkspaceContent({
   panelLayoutMessage,
   exclusionZoneCount,
   hasPrimaryRoof,
+  solarUnlocked,
+  solarUnlockMessage,
   plannerInputs,
   plannerFinancials,
   plannerSyncState,
@@ -490,7 +500,7 @@ export function WorkspaceContent({
           }`}
         >
           <MapViewport mapContainerRef={mapContainerRef}>
-            {showMapTools && <SolarPotentialOverlay financials={plannerFinancials} />}
+            {showMapTools && solarUnlocked && <SolarPotentialOverlay financials={plannerFinancials} />}
           </MapViewport>
           {showMapTools && (
             <WorkspaceDataPanel
@@ -515,8 +525,8 @@ export function WorkspaceContent({
               onPanelTypeChange={onPanelTypeChange}
               panelLayoutMode={panelLayoutMode}
               onPanelLayoutModeChange={onPanelLayoutModeChange}
-              autoPackPanelLimit={autoPackPanelLimit}
-              onAutoPackPanelLimitChange={onAutoPackPanelLimitChange}
+              panelTargetCount={panelTargetCount}
+              onPanelTargetCountChange={onPanelTargetCountChange}
               onAutoPackPanels={onAutoPackPanels}
               onClearPanels={onClearPanels}
               placedPanelCount={placedPanelCount}
@@ -524,6 +534,8 @@ export function WorkspaceContent({
               panelLayoutMessage={panelLayoutMessage}
               exclusionZoneCount={exclusionZoneCount}
               hasPrimaryRoof={hasPrimaryRoof}
+              solarUnlocked={solarUnlocked}
+              solarUnlockMessage={solarUnlockMessage}
               plannerInputs={plannerInputs}
               plannerFinancials={plannerFinancials}
               plannerSyncState={plannerSyncState}

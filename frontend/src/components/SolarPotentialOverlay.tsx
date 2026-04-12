@@ -116,6 +116,14 @@ export function SolarPotentialOverlay({ financials }: { financials: SolarFinanci
             }
             value={`${formatNumber(financials.energyCoveredDisplayPercent)}%`} 
           />
+          <StatRow
+            label="Panels used"
+            value={`${formatNumber(financials.activePanelCount, 0)} panels`}
+          />
+          <StatRow
+            label="Effective yield"
+            value={`${formatNumber(financials.effectiveYieldKwhPerKw, 0)} kWh/kW`}
+          />
         </div>
       </Card>
 

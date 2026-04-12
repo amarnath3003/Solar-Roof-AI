@@ -332,7 +332,7 @@ function getNormalizedMaxPanels(maxPanels?: number) {
     return Number.POSITIVE_INFINITY;
   }
 
-  return Math.min(25, Math.max(1, Math.floor(maxPanels)));
+  return Math.min(25, Math.max(0, Math.floor(maxPanels)));
 }
 
 function getPanelSolarScore(
