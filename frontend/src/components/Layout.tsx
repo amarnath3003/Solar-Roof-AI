@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Hexagon, Layers3, Map, Satellite, Search, SunMedium } from "lucide-react";
+import { Check, ChevronDown, Hexagon, Layers3, Map, Ruler, Satellite, Search, SunMedium } from "lucide-react";
 import { Button, Input } from "@/components/ui/glass";
 import { cn } from "@/lib/utils";
 import { NominatimResult, ViewMode } from "@/types";
@@ -191,6 +191,20 @@ export function MainHeader({
                           Imagery
                         </span>
                         {viewMode === "satellite" ? <Check size={14} className="text-white" /> : null}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetViewMode("blueprint");
+                          setMenuOpen(false);
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Ruler size={14} />
+                          Blueprint View
+                        </span>
+                        {viewMode === "blueprint" ? <Check size={14} className="text-white" /> : null}
                       </button>
                       <button
                         type="button"

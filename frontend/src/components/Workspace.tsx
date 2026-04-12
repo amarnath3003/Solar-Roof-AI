@@ -195,7 +195,7 @@ function MapViewport({
 }) {
   return (
     <Card className="relative h-full min-h-[25rem] overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl lg:min-h-[35rem]">
-      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full bg-black" />
+      <div ref={mapContainerRef} className="absolute inset-0 h-full w-full bg-black" />
       {children}
     </Card>
   );

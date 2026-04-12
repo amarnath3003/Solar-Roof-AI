@@ -1,4 +1,4 @@
-export type ViewMode = "normal" | "satellite";
+export type ViewMode = "normal" | "satellite" | "blueprint";
 export type ElementSource = "manual" | "auto-detected";
 export type PanelLayoutMode = "manual" | "auto";
 export type PanelPlacementSource = "manual" | "auto";

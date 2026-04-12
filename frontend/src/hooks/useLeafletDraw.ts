@@ -13,6 +13,7 @@ import {
   PanelTypeId,
   PlacedPanel,
   RoofElement,
+  ViewMode,
 } from "@/types";
 
 type PanelInteractionConfig = {
@@ -84,9 +85,92 @@ function createManualPreviewStyle(isValid: boolean): L.PathOptions {
       };
 }
 
+function getBlueprintGridMajorSpacing(zoomLevel: number) {
+  const baseZoom = 19;
+  const baseSpacingPx = 48;
+  const spacing = baseSpacingPx * Math.pow(2, zoomLevel - baseZoom);
+  return Math.max(12, Math.min(320, spacing));
+}
+
+function drawGridLineSet(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  centerX: number,
+  centerY: number,
+  spacing: number
+) {
+  context.beginPath();
+
+  for (let x = centerX; x <= width + spacing; x += spacing) {
+    const snappedX = Math.round(x) + 0.5;
+    context.moveTo(snappedX, 0);
+    context.lineTo(snappedX, height);
+  }
+
+  for (let x = centerX - spacing; x >= -spacing; x -= spacing) {
+    const snappedX = Math.round(x) + 0.5;
+    context.moveTo(snappedX, 0);
+    context.lineTo(snappedX, height);
+  }
+
+  for (let y = centerY; y <= height + spacing; y += spacing) {
+    const snappedY = Math.round(y) + 0.5;
+    context.moveTo(0, snappedY);
+    context.lineTo(width, snappedY);
+  }
+
+  for (let y = centerY - spacing; y >= -spacing; y -= spacing) {
+    const snappedY = Math.round(y) + 0.5;
+    context.moveTo(0, snappedY);
+    context.lineTo(width, snappedY);
+  }
+
+  context.stroke();
+}
+
+function drawBlueprintGrid(canvas: HTMLCanvasElement, zoomLevel: number) {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const scaledWidth = Math.round(width * dpr);
+  const scaledHeight = Math.round(height * dpr);
+
+  if (canvas.width !== scaledWidth || canvas.height !== scaledHeight) {
+    canvas.width = scaledWidth;
+    canvas.height = scaledHeight;
+  }
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const majorSpacing = getBlueprintGridMajorSpacing(zoomLevel);
+  const minorSpacing = Math.max(majorSpacing / 4, 6);
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(232, 240, 252, 0.005625)";
+  drawGridLineSet(context, width, height, centerX, centerY, minorSpacing);
+
+  context.strokeStyle = "rgba(232, 240, 252, 0.24)";
+  drawGridLineSet(context, width, height, centerX, centerY, majorSpacing);
+}
+
 export function useLeafletDraw(
   coordinates: Coordinates | null,
-  viewMode: "normal" | "satellite",
+  viewMode: ViewMode,
   showMapTools: boolean,
   setRoofElements: React.Dispatch<React.SetStateAction<RoofElement[]>>,
   setObstacleMarkers: React.Dispatch<React.SetStateAction<ObstacleMarker[]>>,
@@ -104,6 +188,7 @@ export function useLeafletDraw(
   const locationMarkerRef = useRef<L.CircleMarker | null>(null);
   const monochromeLayerRef = useRef<L.TileLayer | null>(null);
   const satelliteLayerRef = useRef<L.TileLayer | null>(null);
+  const blueprintGridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawToolStartHandlerRef = useRef<(() => void) | null>(null);
   const drawToolStopHandlerRef = useRef<(() => void) | null>(null);
   const [isDrawToolActive, setIsDrawToolActive] = useState(false);
@@ -230,7 +315,14 @@ export function useLeafletDraw(
         shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
       });
       // @ts-ignore
-      const map = L.map(mapContainerRef.current, { zoomControl: true, attributionControl: false, tap: false }).setView(
+      const map = L.map(mapContainerRef.current, {
+        zoomControl: true,
+        attributionControl: false,
+        tap: false,
+        scrollWheelZoom: "center",
+        zoomSnap: 0.1,
+        zoomDelta: 0.25,
+      }).setView(
         [coordinates.lat, coordinates.lng],
         19
       );
@@ -254,7 +346,7 @@ export function useLeafletDraw(
 
       if (viewMode === "satellite") {
         esriImagery.addTo(map);
-      } else {
+      } else if (viewMode === "normal") {
         monochromeTiles.addTo(map);
       }
 
@@ -369,9 +461,16 @@ export function useLeafletDraw(
       if (map.hasLayer(monochromeLayer)) {
         map.removeLayer(monochromeLayer);
       }
-    } else {
+    } else if (viewMode === "normal") {
       if (!map.hasLayer(monochromeLayer)) {
         monochromeLayer.addTo(map);
+      }
+      if (map.hasLayer(satelliteLayer)) {
+        map.removeLayer(satelliteLayer);
+      }
+    } else {
+      if (map.hasLayer(monochromeLayer)) {
+        map.removeLayer(monochromeLayer);
       }
       if (map.hasLayer(satelliteLayer)) {
         map.removeLayer(satelliteLayer);
@@ -379,6 +478,88 @@ export function useLeafletDraw(
     }
 
     setTimeout(() => map.invalidateSize(), 100);
+  }, [viewMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const container = map.getContainer();
+    let frameId: number | null = null;
+    let queuedZoom = map.getZoom();
+
+    const renderGrid = (zoomLevel = map.getZoom()) => {
+      queuedZoom = zoomLevel;
+      if (frameId !== null) {
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        if (!blueprintGridCanvasRef.current) {
+          return;
+        }
+        drawBlueprintGrid(blueprintGridCanvasRef.current, queuedZoom);
+      });
+    };
+
+    const ensureGridCanvas = () => {
+      if (!blueprintGridCanvasRef.current) {
+        const canvas = document.createElement("canvas");
+        canvas.className = "blueprint-grid-canvas";
+        blueprintGridCanvasRef.current = canvas;
+      }
+
+      const canvas = blueprintGridCanvasRef.current;
+      if (!canvas.parentElement) {
+        container.insertBefore(canvas, container.firstChild);
+      }
+
+      return canvas;
+    };
+
+    const handleZoom = () => renderGrid(map.getZoom());
+    const handleZoomAnim = (event: L.ZoomAnimEvent) => renderGrid(event.zoom);
+    const handleResize = () => renderGrid(map.getZoom());
+
+    if (viewMode !== "blueprint") {
+      container.classList.remove("blueprint-view");
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (blueprintGridCanvasRef.current?.parentElement === container) {
+        blueprintGridCanvasRef.current.remove();
+      }
+      return;
+    }
+
+    container.classList.add("blueprint-view");
+    ensureGridCanvas();
+
+    renderGrid();
+    map.on("zoom", handleZoom);
+    map.on("zoomanim", handleZoomAnim);
+    map.on("resize", handleResize);
+    map.on("moveend", handleResize);
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      map.off("zoom", handleZoom);
+      map.off("zoomanim", handleZoomAnim);
+      map.off("resize", handleResize);
+      map.off("moveend", handleResize);
+      window.removeEventListener("resize", handleResize);
+
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      container.classList.remove("blueprint-view");
+      if (blueprintGridCanvasRef.current?.parentElement === container) {
+        blueprintGridCanvasRef.current.remove();
+      }
+    };
   }, [viewMode]);
 
   useEffect(() => {
@@ -404,6 +585,7 @@ export function useLeafletDraw(
       locationMarkerRef.current = null;
       monochromeLayerRef.current = null;
       satelliteLayerRef.current = null;
+      blueprintGridCanvasRef.current = null;
       drawToolStartHandlerRef.current = null;
       drawToolStopHandlerRef.current = null;
     };
@@ -479,7 +661,7 @@ export function useLeafletDraw(
       previewLayer = null;
     };
 
-    if (!showMapTools || viewMode !== "satellite" || mode !== "manual") {
+    if (!showMapTools || viewMode === "normal" || mode !== "manual") {
       clearPreview();
       container.style.cursor = "";
       return;

@@ -38,6 +38,23 @@
   touch-action: none !important;
 }
 
+.leaflet-container.blueprint-view {
+  background-color: #121416 !important;
+  background-image:
+    radial-gradient(circle at top, rgba(140, 150, 165, 0.16) 0%, rgba(26, 30, 35, 0.95) 44%, rgba(16, 18, 21, 1) 100%) !important;
+  background-size: 100% 100% !important;
+  background-position: center !important;
+}
+
+.leaflet-container .blueprint-grid-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 250;
+}
+
 .leaflet-control-zoom,
 .leaflet-draw-toolbar {
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
