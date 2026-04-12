@@ -46,10 +46,23 @@ export interface AutoPackPanelsOptions {
 
 const GRID_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [0, 0],
+  [0.25, 0],
   [0.5, 0],
+  [0.75, 0],
+  [0, 0.25],
+  [0.25, 0.25],
+  [0.5, 0.25],
+  [0.75, 0.25],
   [0, 0.5],
+  [0.25, 0.5],
   [0.5, 0.5],
+  [0.75, 0.5],
+  [0, 0.75],
+  [0.25, 0.75],
+  [0.5, 0.75],
+  [0.75, 0.75],
 ];
+const ORIENTATION_ANGLE_OFFSETS: ReadonlyArray<number> = [0, 90];
 
 const DISTANCE_UNITS_KM = "kilometers";
 const BUFFER_UNITS_M = "meters";
@@ -470,13 +483,43 @@ function selectPreferredPanels(
   maxPanels: number,
   solarHeatmap?: SolarHeatmap | null
 ) {
-  const selectedPanels = candidatePanels
-    .map((panel) => ({
-      panel,
-      score: getPanelSolarScore(panel, solarHeatmap),
-    }))
-    .sort((left, right) => right.score - left.score)
-    .slice(0, Math.min(candidatePanels.length, maxPanels));
+  const targetCount = Math.min(candidatePanels.length, maxPanels);
+  if (targetCount <= 0) {
+    return {
+      panels: [],
+      totalScore: 0,
+    };
+  }
+
+  const scoredPanels = candidatePanels.map((panel) => ({
+    panel,
+    score: getPanelSolarScore(panel, solarHeatmap),
+  }));
+
+  if (targetCount >= scoredPanels.length) {
+    return {
+      panels: scoredPanels.map(({ panel }) => panel),
+      totalScore: scoredPanels.reduce((sum, panel) => sum + panel.score, 0),
+    };
+  }
+
+  const prefixSums = new Array(scoredPanels.length + 1).fill(0);
+  for (let index = 0; index < scoredPanels.length; index += 1) {
+    prefixSums[index + 1] = prefixSums[index] + scoredPanels[index].score;
+  }
+
+  let bestStartIndex = 0;
+  let bestWindowScore = Number.NEGATIVE_INFINITY;
+
+  for (let startIndex = 0; startIndex + targetCount <= scoredPanels.length; startIndex += 1) {
+    const windowScore = prefixSums[startIndex + targetCount] - prefixSums[startIndex];
+    if (windowScore > bestWindowScore) {
+      bestWindowScore = windowScore;
+      bestStartIndex = startIndex;
+    }
+  }
+
+  const selectedPanels = scoredPanels.slice(bestStartIndex, bestStartIndex + targetCount);
 
   return {
     panels: selectedPanels.map(({ panel }) => panel),
@@ -484,23 +527,16 @@ function selectPreferredPanels(
   };
 }
 
-function runAutoPackPanels(
+function buildGridCandidates(
   context: PanelLayoutContext,
+  referenceCenter: Coordinates,
   panelTypeId: PanelTypeId,
-  alignmentAngleDegrees = 0,
-  maxPanels: number,
+  alignmentAngleDegrees: number,
   panelGapMeters: number,
-  solarHeatmap?: SolarHeatmap | null
-): AutoPackPanelsResult {
-  if (!context.primaryRoof) {
-    return {
-      panels: [],
-      attempts: 0,
-    };
-  }
-
-  const referenceCenter = getReferenceCenter(context.primaryRoof);
-  const [minLng, minLat, maxLng, maxLat] = turfBbox(context.primaryRoof);
+  xOffsetFactor: number,
+  yOffsetFactor: number
+) {
+  const [minLng, minLat, maxLng, maxLat] = turfBbox(context.primaryRoof!);
   const roofBoundsCorners: [number, number][] = [
     [minLng, minLat],
     [maxLng, minLat],
@@ -524,48 +560,83 @@ function runAutoPackPanels(
       maxY: Number.NEGATIVE_INFINITY,
     }
   );
+
   const { widthM, heightM } = PANEL_TYPES[panelTypeId];
   const panelPitchX = widthM + panelGapMeters;
   const panelPitchY = heightM + panelGapMeters;
+  const startX = rotatedBounds.minX + widthM / 2 + panelPitchX * xOffsetFactor;
+  let centerY = rotatedBounds.minY + heightM / 2 + panelPitchY * yOffsetFactor;
+  const candidatePanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+
+  while (centerY + heightM / 2 <= rotatedBounds.maxY + EPSILON) {
+    let centerX = startX;
+    while (centerX + widthM / 2 <= rotatedBounds.maxX + EPSILON) {
+      const candidatePanel = createPanelFeatureFromLocalCenter(
+        { x: centerX, y: centerY },
+        referenceCenter,
+        panelTypeId,
+        alignmentAngleDegrees
+      );
+
+      if (validatePanelPlacement(candidatePanel, context, candidatePanels).isValid) {
+        candidatePanels.push(candidatePanel);
+      }
+
+      centerX += panelPitchX;
+    }
+    centerY += panelPitchY;
+  }
+
+  return candidatePanels;
+}
+
+function runAutoPackPanels(
+  context: PanelLayoutContext,
+  panelTypeId: PanelTypeId,
+  alignmentAngleDegrees = 0,
+  maxPanels: number,
+  panelGapMeters: number,
+  solarHeatmap?: SolarHeatmap | null
+): AutoPackPanelsResult {
+  if (!context.primaryRoof) {
+    return {
+      panels: [],
+      attempts: 0,
+    };
+  }
+
+  const referenceCenter = getReferenceCenter(context.primaryRoof);
   let bestPanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
   let bestScore = Number.NEGATIVE_INFINITY;
 
-  GRID_OFFSETS.forEach(([xOffsetFactor, yOffsetFactor]) => {
-    const startX = rotatedBounds.minX + widthM / 2 + panelPitchX * xOffsetFactor;
-    let centerY = rotatedBounds.minY + heightM / 2 + panelPitchY * yOffsetFactor;
-    const candidatePanels: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
+  ORIENTATION_ANGLE_OFFSETS.forEach((orientationOffset) => {
+    const orientation = alignmentAngleDegrees + orientationOffset;
 
-    while (centerY + heightM / 2 <= rotatedBounds.maxY + EPSILON) {
-      let centerX = startX;
-      while (centerX + widthM / 2 <= rotatedBounds.maxX + EPSILON) {
-        const candidatePanel = createPanelFeatureFromLocalCenter(
-          { x: centerX, y: centerY },
-          referenceCenter,
-          panelTypeId,
-          alignmentAngleDegrees
-        );
-        if (validatePanelPlacement(candidatePanel, context, candidatePanels).isValid) {
-          candidatePanels.push(candidatePanel);
-        }
-        centerX += panelPitchX;
+    GRID_OFFSETS.forEach(([xOffsetFactor, yOffsetFactor]) => {
+      const candidatePanels = buildGridCandidates(
+        context,
+        referenceCenter,
+        panelTypeId,
+        orientation,
+        panelGapMeters,
+        xOffsetFactor,
+        yOffsetFactor
+      );
+      const preferredPanels = selectPreferredPanels(candidatePanels, maxPanels, solarHeatmap);
+
+      if (
+        preferredPanels.panels.length > bestPanels.length ||
+        (preferredPanels.panels.length === bestPanels.length && preferredPanels.totalScore > bestScore)
+      ) {
+        bestPanels = preferredPanels.panels;
+        bestScore = preferredPanels.totalScore;
       }
-      centerY += panelPitchY;
-    }
-
-    const preferredPanels = selectPreferredPanels(candidatePanels, maxPanels, solarHeatmap);
-
-    if (
-      preferredPanels.panels.length > bestPanels.length ||
-      (preferredPanels.panels.length === bestPanels.length && preferredPanels.totalScore > bestScore)
-    ) {
-      bestPanels = preferredPanels.panels;
-      bestScore = preferredPanels.totalScore;
-    }
+    });
   });
 
   return {
     panels: bestPanels,
-    attempts: GRID_OFFSETS.length,
+    attempts: GRID_OFFSETS.length * ORIENTATION_ANGLE_OFFSETS.length,
   };
 }
 
