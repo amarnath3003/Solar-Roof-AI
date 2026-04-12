@@ -122,6 +122,11 @@ export default function App() {
   const [autoPackPanelLimit, setAutoPackPanelLimit] = useState(25);
   const [placedPanels, setPlacedPanels] = useState<PlacedPanel[]>([]);
   const [panelLayoutMessage, setPanelLayoutMessage] = useState<string | null>(null);
+  const [plannerInputs, setPlannerInputs] = useState<SolarFinancialInputs>(DEFAULT_PLANNER_INPUTS);
+  const [plannerSyncState, setPlannerSyncState] = useState<PlannerSyncState>("estimate");
+  const [plannerSyncMessage, setPlannerSyncMessage] = useState(
+    "Draw a primary roof polygon to turn the estimate into a live packed layout."
+  );
 
   const {
     address,
@@ -150,10 +155,9 @@ export default function App() {
     () => buildPanelLayoutContext(roofElements, obstacleMarkers),
     [roofElements, obstacleMarkers]
   );
-  const selectedPanelType = useMemo(() => getPanelTypeDefinition(panelTypeId), [panelTypeId]);
   const estimatedPanelKw = useMemo(
-    () => Number((placedPanels.length * selectedPanelType.kw).toFixed(1)),
-    [placedPanels.length, selectedPanelType.kw]
+    () => Number(((placedPanels.length * plannerInputs.panelCapacityWatts) / 1000).toFixed(1)),
+    [placedPanels.length, plannerInputs.panelCapacityWatts]
   );
   const solarAnalysis = useMemo(
     () =>
@@ -166,6 +170,36 @@ export default function App() {
   );
   const solarHeatmap = solarOverlayEnabled ? solarAnalysis : null;
   const panelAlignmentAngleDegrees = solarAnalysis?.alignmentAngleDegrees ?? activeRoofFootprint?.slope?.aspectDegrees ?? 180;
+  const plannerCapacityAnalysis = useMemo(() => {
+    if (!panelLayoutContext.primaryRoof) {
+      return {
+        result: null,
+        error: null as string | null,
+      };
+    }
+
+    try {
+      return {
+        result: autoPackPanelsToCapacity(panelLayoutContext, panelTypeId, panelAlignmentAngleDegrees, {
+          solarHeatmap: solarAnalysis,
+        }),
+        error: null as string | null,
+      };
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("Roof-aware planner capacity calculation failed.", error);
+      }
+
+      return {
+        result: null,
+        error: error instanceof Error ? error.message : "Planner capacity calculation failed.",
+      };
+    }
+  }, [panelAlignmentAngleDegrees, panelLayoutContext, panelTypeId, solarAnalysis]);
+  const plannerFinancials = useSolarFinancials({
+    ...plannerInputs,
+    roofMaxPanelCount: plannerCapacityAnalysis.result?.panelCount ?? null,
+  });
 
   const handlePlaceManualPanel = useCallback(
     (feature: GeoJSON.Feature<GeoJSON.Polygon>) => {
@@ -186,6 +220,7 @@ export default function App() {
     showDetectionPreview,
     clearDetectionPreview,
     acceptDetectionPreview,
+    isDrawToolActive,
   } = useLeafletDraw(
     coordinates,
     viewMode,
