@@ -29,11 +29,11 @@ import {
 type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
 
 const DEFAULT_PLANNER_INPUTS: SolarFinancialInputs = {
-  monthlyUsageKwh: 830,
+  monthlyBill: 142.26,
   panelCapacityWatts: 400,
   energyCostPerKwh: 0.18,
-  costPerWatt: 3.2,
-  federalTaxCreditPct: 30,
+  solarIncentiveAmount: 0,
+  costPerWatt: 3.15,
 };
 
 function clampValue(value: number, min: number, max: number) {
@@ -125,7 +125,7 @@ export default function App() {
   const [plannerInputs, setPlannerInputs] = useState<SolarFinancialInputs>(DEFAULT_PLANNER_INPUTS);
   const [plannerSyncState, setPlannerSyncState] = useState<PlannerSyncState>("estimate");
   const [plannerSyncMessage, setPlannerSyncMessage] = useState(
-    "Draw a primary roof polygon to turn the estimate into a live packed layout."
+    "Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout."
   );
 
   const {
@@ -260,7 +260,7 @@ export default function App() {
     setPlacedPanels([]);
     setPanelLayoutMessage(null);
     setPlannerSyncState("estimate");
-    setPlannerSyncMessage("Draw a primary roof polygon to turn the estimate into a live packed layout.");
+    setPlannerSyncMessage("Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout.");
     clearDetectionPreview();
     clearDetectionError();
   }, [coordinates, clearDetectionError, clearDetectionPreview]);
@@ -358,9 +358,9 @@ export default function App() {
     if (!panelLayoutContext.primaryRoof) {
       setPlannerSyncState("estimate");
       setPlannerSyncMessage(
-        `Estimate only: about ${plannerFinancials.targetPanelCount} panel(s) would target ${Math.round(
-          plannerInputs.monthlyUsageKwh
-        )} kWh/month. Draw a primary roof to verify what really fits.`
+        `Estimate only: about ${plannerFinancials.targetPanelCount} panel(s) would offset roughly ${plannerFinancials.monthlyBill.toFixed(
+          0
+        )}/month. Draw a primary roof to verify what really fits.`
       );
       return;
     }
@@ -400,17 +400,17 @@ export default function App() {
         const syncMessage = plannerFinancials.roofLimited
           ? `Roof maxes at ${plannerFinancials.roofMaxPanelCount} panel(s), leaving about ${Math.round(
               plannerFinancials.monthlyShortfallKwh
-            )} kWh/month on-grid. Layout synced from planner.`
+            )} kWh/month on-grid. Layout synced from solar potential analysis.`
           : `Packing ${panels.length} panel(s) for about ${Math.round(
               plannerFinancials.energyCoveredDisplayPercent
-            )}% coverage. Layout synced from planner.`;
+            )}% bill coverage. Layout synced from solar potential analysis.`;
 
         setPlannerSyncState("synced");
         setPlannerSyncMessage(syncMessage);
         setPanelLayoutMessage(syncMessage);
       } catch (error) {
         if (import.meta.env.DEV) {
-          console.error("Roof-aware planner sync failed.", error);
+          console.error("Solar potential sync failed.", error);
         }
 
         setPlannerSyncState("error");
@@ -431,7 +431,7 @@ export default function App() {
     plannerFinancials.roofMaxPanelCount,
     plannerFinancials.monthlyShortfallKwh,
     plannerFinancials.energyCoveredDisplayPercent,
-    plannerInputs.monthlyUsageKwh,
+    plannerInputs.monthlyBill,
     panelLayoutMode,
     isDrawToolActive,
     panelTypeId,

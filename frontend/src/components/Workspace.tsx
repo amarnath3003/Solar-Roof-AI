@@ -18,11 +18,11 @@ import {
 } from "@/types";
 
 type PlannerInputField =
-  | "monthlyUsageKwh"
+  | "monthlyBill"
   | "panelCapacityWatts"
   | "energyCostPerKwh"
   | "costPerWatt"
-  | "federalTaxCreditPct";
+  | "solarIncentiveAmount";
 
 type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
 
