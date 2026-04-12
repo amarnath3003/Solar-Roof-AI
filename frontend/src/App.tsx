@@ -31,7 +31,7 @@ type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
 const DEFAULT_PLANNER_INPUTS: SolarFinancialInputs = {
   // EIA residential monthly bill baseline.
   monthlyBill: 142.26,
-  // Common modern residential module rating.
+  // Default panel capacity follows the default panel type.
   panelCapacityWatts: 400,
   // Rounded current U.S. residential utility-rate baseline.
   energyCostPerKwh: 0.18,
@@ -39,6 +39,11 @@ const DEFAULT_PLANNER_INPUTS: SolarFinancialInputs = {
   solarIncentiveAmount: 0,
   // NREL residential PV benchmark baseline.
   costPerWatt: 2.9,
+};
+
+const PANEL_CAPACITY_BY_TYPE: Record<PanelTypeId, number> = {
+  "standard-residential": 400,
+  "large-commercial": 450,
 };
 
 function clampValue(value: number, min: number, max: number) {
@@ -245,10 +250,21 @@ export default function App() {
     setPanelTargetCount(Math.max(1, Math.floor(next)));
   }, []);
 
-  const resetPlannerInputs = useCallback(() => {
-    setPlannerInputs(DEFAULT_PLANNER_INPUTS);
-    setPanelTargetManuallySet(false);
+  const handlePanelTypeChange = useCallback((next: PanelTypeId) => {
+    setPanelTypeId(next);
+    setPlannerInputs((current) => ({
+      ...current,
+      panelCapacityWatts: PANEL_CAPACITY_BY_TYPE[next],
+    }));
   }, []);
+
+  const resetPlannerInputs = useCallback(() => {
+    setPlannerInputs((current) => ({
+      ...DEFAULT_PLANNER_INPUTS,
+      panelCapacityWatts: PANEL_CAPACITY_BY_TYPE[panelTypeId],
+    }));
+    setPanelTargetManuallySet(false);
+  }, [panelTypeId]);
 
   const {
     mapContainerRef,
@@ -704,7 +720,7 @@ export default function App() {
           solarOverlayEnabled={solarOverlayEnabled}
           solarHeatmap={solarHeatmap}
           panelTypeId={panelTypeId}
-          onPanelTypeChange={setPanelTypeId}
+          onPanelTypeChange={handlePanelTypeChange}
           panelLayoutMode={panelLayoutMode}
           onPanelLayoutModeChange={setPanelLayoutMode}
           panelTargetCount={panelTargetCount}

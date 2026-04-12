@@ -1,7 +1,7 @@
 import React from "react";
-import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronUp, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
 import { FinancialSidebarPanel } from "./FinancialSidebarPanel";
-import { SolarPotentialOverlay } from "@/components/SolarPotentialOverlay";
+import { SolarPotentialOverlay } from "./SolarPotentialOverlay";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { Button, Card } from "@/components/ui/glass";
 import { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
@@ -243,8 +243,10 @@ function WorkspaceDataPanel({
   onPlannerInputChange,
   onResetPlannerInputs,
 }: WorkspaceDataPanelProps) {
+  const [showActivityLog, setShowActivityLog] = React.useState(false);
+
   return (
-    <div className="mt-4 flex min-h-0 w-full shrink-0 animate-fade-in-up flex-col overflow-hidden lg:mt-0 lg:h-full lg:w-[19rem] xl:w-[20.5rem]">
+    <div className="mt-4 flex min-h-0 w-full shrink-0 animate-fade-in-up flex-col overflow-hidden lg:mt-0 lg:h-full lg:w-[17rem] xl:w-[18rem]">
       <Card className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border-white/15 p-0">
         <div className="border-b border-white/10 bg-black/30 px-4 py-4">
           <SectionTitle icon={<Layers size={14} className="text-white" />} title="Sidebar" />
@@ -260,7 +262,7 @@ function WorkspaceDataPanel({
           </div>
         </div>
 
-        <div className="custom-scrollbar flex-1 min-h-0 overflow-y-auto px-4 py-4">
+        <div className="custom-scrollbar flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4">
           <div className="flex flex-col gap-4">
             <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
               <SectionTitle icon={<Bot size={14} className="text-white" />} title="Automation" />
@@ -397,41 +399,50 @@ function WorkspaceDataPanel({
             />
 
             <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
-              <SectionTitle icon={<Monitor size={14} className="text-white" />} title="Activity Log" />
-              <div className="custom-scrollbar max-h-64 overflow-y-auto rounded-2xl border border-white/5 bg-black/40 p-3">
-                <div className="flex flex-col gap-3">
-                  {roofElements.length === 0 && obstacleMarkers.length === 0 && placedPanelCount === 0 ? (
-                    <div className="py-10 text-zinc-600 text-[10px] uppercase tracking-widest text-center">No entities drawn</div>
-                  ) : (
-                    <>
-                      {roofElements.map((element) => (
-                        <div
-                          key={element.id}
-                          className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-xl flex items-center gap-2 tracking-wide font-mono border border-white/5"
-                        >
-                          <Square size={10} className="text-white/60" /> {element.type.toUpperCase()} #{element.id.toString().slice(-4)} {element.source === "auto-detected" ? "AI" : "MAN"}
-                        </div>
-                      ))}
-                      {obstacleMarkers.map((marker) => (
-                        <div
-                          key={marker.id}
-                          className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-xl flex items-center gap-2 tracking-wide font-mono border border-white/5"
-                        >
-                          <Circle size={10} className="text-white/60" /> MKR #{marker.id.toString().slice(-4)} {marker.source === "auto-detected" ? "AI" : "MAN"}
-                        </div>
-                      ))}
-                      {Array.from({ length: placedPanelCount }).map((_, index) => (
-                        <div
-                          key={`panel-${index}`}
-                          className="text-[10px] text-zinc-300 bg-blue-500/10 p-2 rounded-xl flex items-center gap-2 tracking-wide font-mono border border-blue-300/15"
-                        >
-                          <Square size={10} className="text-blue-100/80" /> PNL #{(index + 1).toString().padStart(3, "0")}
-                        </div>
-                      ))}
-                    </>
-                  )}
+              <button
+                type="button"
+                onClick={() => setShowActivityLog((previous) => !previous)}
+                className="flex items-center justify-between"
+              >
+                <SectionTitle icon={<Monitor size={14} className="text-white" />} title="Activity Log" />
+                {showActivityLog ? <ChevronUp size={14} className="text-zinc-500" /> : <ChevronDown size={14} className="text-zinc-500" />}
+              </button>
+              {showActivityLog ? (
+                <div className="custom-scrollbar max-h-36 overflow-y-auto rounded-2xl border border-white/5 bg-black/40 p-3">
+                  <div className="flex flex-col gap-2">
+                    {roofElements.length === 0 && obstacleMarkers.length === 0 && placedPanelCount === 0 ? (
+                      <div className="py-6 text-zinc-600 text-[10px] uppercase tracking-widest text-center">No entities drawn</div>
+                    ) : (
+                      <>
+                        {roofElements.map((element) => (
+                          <div
+                            key={element.id}
+                            className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-xl flex items-center gap-2 tracking-wide font-mono border border-white/5"
+                          >
+                            <Square size={10} className="text-white/60" /> {element.type.toUpperCase()} #{element.id.toString().slice(-4)} {element.source === "auto-detected" ? "AI" : "MAN"}
+                          </div>
+                        ))}
+                        {obstacleMarkers.map((marker) => (
+                          <div
+                            key={marker.id}
+                            className="text-[10px] text-zinc-300 bg-white/5 p-2 rounded-xl flex items-center gap-2 tracking-wide font-mono border border-white/5"
+                          >
+                            <Circle size={10} className="text-white/60" /> MKR #{marker.id.toString().slice(-4)} {marker.source === "auto-detected" ? "AI" : "MAN"}
+                          </div>
+                        ))}
+                        {Array.from({ length: placedPanelCount }).map((_, index) => (
+                          <div
+                            key={`panel-${index}`}
+                            className="text-[10px] text-zinc-300 bg-cyan-500/10 p-2 rounded-xl flex items-center gap-2 tracking-wide font-mono border border-cyan-300/15"
+                          >
+                            <Square size={10} className="text-cyan-100/80" /> PNL #{(index + 1).toString().padStart(3, "0")}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </section>
           </div>
         </div>
@@ -489,14 +500,14 @@ export function WorkspaceContent({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pr-1">
       <WorkspaceErrorBoundary
         title="Workspace panel hit an issue"
         description="The map workspace failed to render for this location. Try searching again or toggling the sidebar once more."
       >
         <div
           className={`grid min-h-[25rem] shrink-0 grid-cols-1 gap-4 items-stretch ${
-            showMapTools ? "lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_20.5rem]" : ""
+            showMapTools ? "lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_18rem]" : ""
           }`}
         >
           <MapViewport mapContainerRef={mapContainerRef}>

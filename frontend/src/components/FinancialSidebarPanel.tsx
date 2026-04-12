@@ -51,6 +51,22 @@ function InputField({
   onChange: (field: EditablePlannerField, value: number, min: number, max: number) => void;
   disabled?: boolean;
 }) {
+  const [draftValue, setDraftValue] = useState(String(value));
+
+  React.useEffect(() => {
+    setDraftValue(String(value));
+  }, [value]);
+
+  const commitValue = () => {
+    const parsed = Number(draftValue);
+    if (Number.isNaN(parsed)) {
+      setDraftValue(String(value));
+      return;
+    }
+
+    onChange(field, parsed, min, max);
+  };
+
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">{label}</label>
@@ -61,12 +77,16 @@ function InputField({
           min={min}
           max={max}
           step={step}
-          value={value}
+          value={draftValue}
           disabled={disabled}
           onChange={(e) => {
-            const n = Number(e.target.value);
-            if (!Number.isNaN(n)) {
-              onChange(field, n, min, max);
+            setDraftValue(e.target.value);
+          }}
+          onBlur={commitValue}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              commitValue();
+              (event.target as HTMLInputElement).blur();
             }
           }}
           className="w-full bg-transparent outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -80,11 +100,11 @@ function InputField({
 function getSyncTone(syncState: PlannerSyncState) {
   switch (syncState) {
     case "synced":
-      return "border-emerald-300/20 bg-emerald-500/10 text-emerald-100";
+      return "border-cyan-300/20 bg-cyan-500/10 text-cyan-100";
     case "syncing":
       return "border-sky-300/20 bg-sky-500/10 text-sky-100";
     case "paused":
-      return "border-amber-300/20 bg-amber-500/10 text-amber-100";
+      return "border-zinc-300/20 bg-zinc-500/10 text-zinc-100";
     case "error":
       return "border-red-300/20 bg-red-500/10 text-red-100";
     default:
@@ -128,7 +148,7 @@ export function FinancialSidebarPanel({
   return (
     <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3 text-white">
       <div className="flex items-center justify-between cursor-pointer select-none" onClick={() => setIsExpanded(!isExpanded)}>
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-violet-300">
+        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-cyan-300">
           <DollarSign size={14} />
           <span>Solar Potential Analysis</span>
         </div>
@@ -143,14 +163,14 @@ export function FinancialSidebarPanel({
             </div>
           )}
 
-          <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-3 flex items-center mb-2 gap-3">
-            <Info className="text-violet-300 shrink-0" size={16} />
-            <div className="flex-1 text-[10px] uppercase tracking-[0.14em] text-violet-200">Projections use a USA financial model</div>
+          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-3 flex items-center mb-2 gap-3">
+            <Info className="text-cyan-300 shrink-0" size={16} />
+            <div className="flex-1 text-[10px] uppercase tracking-[0.14em] text-cyan-100">Projections use a USA financial model</div>
             <button
               aria-label="Reset Defaults"
               onClick={onReset}
               disabled={isLocked}
-              className="text-xs text-violet-300 hover:text-violet-100 underline decoration-violet-500/50 underline-offset-4 disabled:opacity-50"
+              className="text-xs text-cyan-300 hover:text-cyan-100 underline decoration-cyan-500/50 underline-offset-4 disabled:opacity-50"
             >
               Reset
             </button>
@@ -193,7 +213,7 @@ export function FinancialSidebarPanel({
                   onClick={onAutoPackPanels}
                   title="Auto-pack layout"
                   disabled={isLocked || !hasRoofCapacity}
-                  className="p-1 bg-violet-500/20 hover:bg-violet-500/40 border border-violet-300/30 rounded-lg text-violet-200 disabled:opacity-40"
+                  className="p-1 bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-300/30 rounded-lg text-cyan-200 disabled:opacity-40"
                 >
                   <RefreshCw size={20} />
                 </button>
@@ -227,7 +247,7 @@ export function FinancialSidebarPanel({
                   onClick={() => onPanelLayoutModeChange("auto")}
                   className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] uppercase tracking-[0.14em] transition ${
                     panelLayoutMode === "auto"
-                      ? "bg-violet-400/20 text-violet-200 border border-violet-300/30"
+                      ? "bg-cyan-400/20 text-cyan-200 border border-cyan-300/30"
                       : "text-zinc-500 border border-transparent hover:text-zinc-300"
                   } disabled:opacity-50`}
                 >
@@ -239,7 +259,7 @@ export function FinancialSidebarPanel({
                   onClick={() => onPanelLayoutModeChange("manual")}
                   className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] uppercase tracking-[0.14em] transition ${
                     panelLayoutMode === "manual"
-                      ? "bg-emerald-400/20 text-emerald-200 border border-emerald-300/30"
+                      ? "bg-cyan-400/20 text-cyan-200 border border-cyan-300/30"
                       : "text-zinc-500 border border-transparent hover:text-zinc-300"
                   } disabled:opacity-50`}
                 >
@@ -257,7 +277,7 @@ export function FinancialSidebarPanel({
             </div>
 
             {panelLayoutMessage && (
-              <div className="text-[10px] uppercase tracking-[0.12em] text-violet-200 bg-violet-500/20 p-2 rounded-xl -mt-2">
+              <div className="text-[10px] uppercase tracking-[0.12em] text-cyan-100 bg-cyan-500/20 p-2 rounded-xl -mt-2">
                 {panelLayoutMessage}
               </div>
             )}
@@ -295,17 +315,9 @@ export function FinancialSidebarPanel({
               onChange={onInputChange}
               disabled={isLocked}
             />
-            <InputField
-              label="Panel capacity"
-              field="panelCapacityWatts"
-              value={inputs.panelCapacityWatts}
-              min={300}
-              max={550}
-              step={5}
-              suffix="Watts"
-              onChange={onInputChange}
-              disabled={isLocked}
-            />
+            <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-[10px] uppercase tracking-[0.12em] text-zinc-300">
+              Capacity from panel type: {inputs.panelCapacityWatts}W
+            </div>
           </div>
         </div>
       )}
