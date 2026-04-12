@@ -1,7 +1,9 @@
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import { Bot, Check, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
+import { SolarFinancialDashboard } from "@/components/SolarFinancialDashboard";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { Button, Card } from "@/components/ui/glass";
+import { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
 import { PANEL_TYPES } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
 import {
@@ -15,10 +17,14 @@ import {
   ViewMode,
 } from "@/types";
 
-const SolarFinancialDashboard = lazy(async () => {
-  const module = await import("@/components/SolarFinancialDashboard");
-  return { default: module.SolarFinancialDashboard };
-});
+type PlannerInputField =
+  | "monthlyUsageKwh"
+  | "panelCapacityWatts"
+  | "energyCostPerKwh"
+  | "costPerWatt"
+  | "federalTaxCreditPct";
+
+type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
 
 type WorkspaceContentProps = {
   coordinates: Coordinates | null;
@@ -55,6 +61,12 @@ type WorkspaceContentProps = {
   panelLayoutMessage: string | null;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
+  plannerInputs: SolarFinancialInputs;
+  plannerFinancials: SolarFinancialResults;
+  plannerSyncState: PlannerSyncState;
+  plannerSyncMessage: string;
+  onPlannerInputChange: (field: PlannerInputField, value: number, min: number, max: number) => void;
+  onResetPlannerInputs: () => void;
 };
 
 type PanelLayoutPanelProps = {
@@ -579,6 +591,12 @@ export function WorkspaceContent({
   panelLayoutMessage,
   exclusionZoneCount,
   hasPrimaryRoof,
+  plannerInputs,
+  plannerFinancials,
+  plannerSyncState,
+  plannerSyncMessage,
+  onPlannerInputChange,
+  onResetPlannerInputs,
 }: WorkspaceContentProps) {
   if (!coordinates) {
     return <EmptyState />;
@@ -634,23 +652,16 @@ export function WorkspaceContent({
       </WorkspaceErrorBoundary>
 
       {showMapTools ? (
-        <WorkspaceErrorBoundary
-          title="Financial dashboard hit an issue"
-          description="The solar ROI module could not render, but the map workspace is still available. Toggle the sidebar off and back on to retry."
-        >
-          <Suspense
-            fallback={
-              <Card className="rounded-[2rem] border-white/15 p-6">
-                <div className="flex items-center gap-3 text-sm text-zinc-300">
-                  <Loader2 size={16} className="animate-spin text-emerald-200" />
-                  Loading solar financial dashboard...
-                </div>
-              </Card>
-            }
-          >
-            <SolarFinancialDashboard />
-          </Suspense>
-        </WorkspaceErrorBoundary>
+        <SolarFinancialDashboard
+          inputs={plannerInputs}
+          financials={plannerFinancials}
+          panelTypeId={panelTypeId}
+          placedPanelCount={placedPanelCount}
+          syncState={plannerSyncState}
+          syncMessage={plannerSyncMessage}
+          onInputChange={onPlannerInputChange}
+          onReset={onResetPlannerInputs}
+        />
       ) : null}
     </div>
   );
