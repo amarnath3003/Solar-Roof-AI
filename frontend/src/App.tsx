@@ -56,59 +56,13 @@ const PANEL_CAPACITY_BY_TYPE: Record<PanelTypeId, number> = {
 const LAYOUT_FINISH_DELAY_MS = 160;
 const AREA_RECALC_DELAY_MS = 24;
 const PLANNER_SYNC_DELAY_MS = 40;
-const SATELLITE_CAPTURE_FOCUS_MULTIPLIER = 2;
-const SATELLITE_CAPTURE_BASE_PADDING_PX = 84;
-const SATELLITE_CAPTURE_BASE_ZOOM_STEP = 0.45;
+const SATELLITE_CAPTURE_MAX_ZOOM = 21;
+const SATELLITE_CAPTURE_MIN_FOCUS_ZOOM = 20;
+const SATELLITE_CAPTURE_PADDING_PX = 16;
+const SATELLITE_CAPTURE_FALLBACK_ZOOM_STEPS = [0, 0.35, 0.7, 1.05, 1.4] as const;
 
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function downloadRoofData(roofElements: RoofElement[], obstacleMarkers: ObstacleMarker[]) {
-  const featureCollection: GeoJSON.FeatureCollection = {
-    type: "FeatureCollection",
-    features: [
-      ...roofElements.map(
-        (element) =>
-          ({
-            ...element.geoJSON,
-            properties: {
-              ...(element.geoJSON.properties ?? {}),
-              elementType: element.type,
-              style: element.style,
-              source: element.source,
-              confidence: element.confidence,
-              slope: element.slope,
-            },
-          }) as GeoJSON.Feature
-      ),
-      ...obstacleMarkers.map(
-        (marker) =>
-          ({
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [marker.position[1], marker.position[0]],
-            },
-            properties: {
-              type: marker.type,
-              label: marker.label,
-              source: marker.source,
-              confidence: marker.confidence,
-              estimatedHeightM: marker.estimatedHeightM,
-            },
-          }) as GeoJSON.Feature
-      ),
-    ],
-  };
-
-  const dataUrl = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(featureCollection, null, 2))}`;
-  const anchor = document.createElement("a");
-  anchor.href = dataUrl;
-  anchor.download = "roof_monochrome_export.geojson";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
 }
 
 function delay(ms: number): Promise<void> {
@@ -619,10 +573,6 @@ export default function App() {
     setPlannerCapacityError(null);
   };
 
-  const exportGeoJson = () => {
-    downloadRoofData(roofElements, obstacleMarkers);
-  };
-
   const exportBlueprintReport = useCallback(async () => {
     if (!mapContainerRef.current) {
       setPanelLayoutMessage("Open the workspace map before exporting a blueprint report.");
@@ -644,13 +594,6 @@ export default function App() {
       await delay(220);
 
       if (activeMap) {
-        const safeMaxSatelliteZoom = 19.45;
-        const minimumFocusZoom = 18.9;
-        const capturePaddingPx = Math.max(
-          18,
-          Math.round(SATELLITE_CAPTURE_BASE_PADDING_PX / SATELLITE_CAPTURE_FOCUS_MULTIPLIER)
-        );
-        const fallbackZoomStep = SATELLITE_CAPTURE_BASE_ZOOM_STEP * SATELLITE_CAPTURE_FOCUS_MULTIPLIER;
         const captureBounds = getSatelliteCaptureBounds(
           roofElements,
           obstacleMarkers,
@@ -665,15 +608,15 @@ export default function App() {
               [captureBounds.maxLat, captureBounds.maxLng],
             ],
             {
-              padding: [capturePaddingPx, capturePaddingPx],
-              maxZoom: safeMaxSatelliteZoom,
+              padding: [SATELLITE_CAPTURE_PADDING_PX, SATELLITE_CAPTURE_PADDING_PX],
+              maxZoom: SATELLITE_CAPTURE_MAX_ZOOM,
               animate: false,
             }
           );
         } else if (coordinates) {
           const targetZoom = Math.min(
-            safeMaxSatelliteZoom,
-            Math.max(minimumFocusZoom, activeMap.getZoom() + fallbackZoomStep)
+            SATELLITE_CAPTURE_MAX_ZOOM,
+            Math.max(SATELLITE_CAPTURE_MIN_FOCUS_ZOOM, activeMap.getZoom() + 1.25)
           );
           activeMap.setView([coordinates.lat, coordinates.lng], targetZoom, { animate: false });
         }
@@ -684,22 +627,35 @@ export default function App() {
 
       await delay(220);
 
-      try {
-        const satelliteSnapshot = await captureMapSnapshot(mapContainerRef.current, mapRef.current ?? undefined);
-        satelliteImage = {
-          dataUrl: `data:image/png;base64,${satelliteSnapshot.snapshotBase64}`,
-          width: satelliteSnapshot.width,
-          height: satelliteSnapshot.height,
-        };
-      } catch {
-        satelliteImage = null;
+      if (activeMap) {
+        const baseCaptureZoom = activeMap.getZoom();
+
+        for (const zoomDrop of SATELLITE_CAPTURE_FALLBACK_ZOOM_STEPS) {
+          const attemptZoom = Math.min(
+            SATELLITE_CAPTURE_MAX_ZOOM,
+            Math.max(SATELLITE_CAPTURE_MIN_FOCUS_ZOOM, baseCaptureZoom - zoomDrop)
+          );
+
+          activeMap.setZoom(attemptZoom, { animate: false });
+          await delay(140);
+          activeMap.invalidateSize();
+          await delay(100);
+
+          try {
+            const satelliteSnapshot = await captureMapSnapshot(mapContainerRef.current, activeMap);
+            satelliteImage = {
+              dataUrl: `data:image/png;base64,${satelliteSnapshot.snapshotBase64}`,
+              width: satelliteSnapshot.width,
+              height: satelliteSnapshot.height,
+            };
+            break;
+          } catch {
+            satelliteImage = null;
+          }
+        }
       }
 
-      setViewMode("blueprint");
-      await delay(180);
-
-      activeMap?.invalidateSize();
-      await delay(180);
+      await delay(120);
 
       const { pdfFileName, svgFileName } = await withTimeout(
         exportBlueprintPitchReport({
@@ -743,9 +699,7 @@ export default function App() {
         activeMap.setView(previousCenter, previousZoom, { animate: false });
       }
 
-      if (previousViewMode !== "blueprint") {
-        setViewMode(previousViewMode);
-      }
+      setViewMode(previousViewMode);
 
       setIsExportingBlueprintReport(false);
     }
@@ -1078,7 +1032,6 @@ export default function App() {
           obstacleMarkers={obstacleMarkers}
           mapContainerRef={mapContainerRef}
           onClearAll={clearAllData}
-          onExport={exportGeoJson}
           onExportBlueprintReport={exportBlueprintReport}
           onAutoDetect={runAutoDetection}
           onCalculateSqFt={calculateSqFt}
@@ -1105,7 +1058,6 @@ export default function App() {
           estimatedPanelKw={estimatedPanelKw}
           panelLayoutMessage={panelLayoutMessage}
           isExportingBlueprintReport={isExportingBlueprintReport}
-          isBlueprintMode={viewMode === "blueprint"}
           exclusionZoneCount={panelLayoutContext.exclusionZones.length}
           hasPrimaryRoof={hasPrimaryRoof}
           solarUnlocked={solarUnlocked}

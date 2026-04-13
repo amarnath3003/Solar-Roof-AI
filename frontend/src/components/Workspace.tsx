@@ -35,7 +35,6 @@ type WorkspaceContentProps = {
   obstacleMarkers: ObstacleMarker[];
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
   onClearAll: () => void;
-  onExport: () => void;
   onExportBlueprintReport: () => void;
   onAutoDetect: () => void;
   onCalculateSqFt: () => void;
@@ -62,7 +61,6 @@ type WorkspaceContentProps = {
   estimatedPanelKw: number;
   panelLayoutMessage: string | null;
   isExportingBlueprintReport: boolean;
-  isBlueprintMode: boolean;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
   solarUnlocked: boolean;
@@ -81,7 +79,6 @@ type WorkspaceDataPanelProps = {
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
   onClearAll: () => void;
-  onExport: () => void;
   onExportBlueprintReport: () => void;
   onAutoDetect: () => void;
   onCalculateSqFt: () => void;
@@ -108,7 +105,6 @@ type WorkspaceDataPanelProps = {
   estimatedPanelKw: number;
   panelLayoutMessage: string | null;
   isExportingBlueprintReport: boolean;
-  isBlueprintMode: boolean;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
   solarUnlocked: boolean;
@@ -213,7 +209,6 @@ function WorkspaceDataPanel({
   roofElements,
   obstacleMarkers,
   onClearAll,
-  onExport,
   onExportBlueprintReport,
   onAutoDetect,
   onCalculateSqFt,
@@ -240,7 +235,6 @@ function WorkspaceDataPanel({
   estimatedPanelKw,
   panelLayoutMessage,
   isExportingBlueprintReport,
-  isBlueprintMode,
   exclusionZoneCount,
   hasPrimaryRoof,
   solarUnlocked,
@@ -310,7 +304,7 @@ function WorkspaceDataPanel({
                   variant="primary"
                   className="h-9 w-full"
                   onClick={onExportBlueprintReport}
-                  disabled={!isBlueprintMode || isExportingBlueprintReport}
+                  disabled={isExportingBlueprintReport}
                 >
                   {isExportingBlueprintReport ? (
                     <>
@@ -322,9 +316,6 @@ function WorkspaceDataPanel({
                     </>
                   )}
                 </Button>
-                <Button variant="outline" className="h-9 w-full" onClick={onExport}>
-                  <Download size={14} /> Export GeoJSON
-                </Button>
                 <Button
                   variant="ghost"
                   className="h-9 w-full border border-transparent text-red-400 hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-300"
@@ -333,12 +324,6 @@ function WorkspaceDataPanel({
                   <Trash2 size={14} /> Clear All
                 </Button>
               </div>
-
-              {!isBlueprintMode && (
-                <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[10px] uppercase tracking-[0.12em] text-zinc-400">
-                  Switch to Blueprint View to enable full export report.
-                </div>
-              )}
 
               {detectionMessage && (
                 <div className="rounded-2xl border border-white/15 bg-black/40 px-4 py-3 text-[10px] uppercase tracking-[0.12em] text-zinc-300 leading-relaxed">
@@ -490,7 +475,6 @@ export function WorkspaceContent({
   obstacleMarkers,
   mapContainerRef,
   onClearAll,
-  onExport,
   onExportBlueprintReport,
   onAutoDetect,
   onCalculateSqFt,
@@ -517,7 +501,6 @@ export function WorkspaceContent({
   estimatedPanelKw,
   panelLayoutMessage,
   isExportingBlueprintReport,
-  isBlueprintMode,
   exclusionZoneCount,
   hasPrimaryRoof,
   solarUnlocked,
@@ -552,7 +535,6 @@ export function WorkspaceContent({
               roofElements={roofElements}
               obstacleMarkers={obstacleMarkers}
               onClearAll={onClearAll}
-              onExport={onExport}
               onExportBlueprintReport={onExportBlueprintReport}
               onAutoDetect={onAutoDetect}
               onCalculateSqFt={onCalculateSqFt}
@@ -579,7 +561,6 @@ export function WorkspaceContent({
               estimatedPanelKw={estimatedPanelKw}
               panelLayoutMessage={panelLayoutMessage}
               isExportingBlueprintReport={isExportingBlueprintReport}
-              isBlueprintMode={isBlueprintMode}
               exclusionZoneCount={exclusionZoneCount}
               hasPrimaryRoof={hasPrimaryRoof}
               solarUnlocked={solarUnlocked}
