@@ -17,6 +17,7 @@ import {
   getRoofOutlineAlignmentAngleDegrees,
   validatePanelPlacement,
 } from "@/lib/panelLayout";
+import { exportBlueprintPitchReport } from "@/lib/blueprintExport";
 import { calculateRoofAreaSummary } from "@/lib/roofArea";
 import { calculateSolarHeatmap } from "@/lib/solarHeatmap";
 import { getActiveRoofFootprint } from "@/lib/sunProjection";
@@ -51,6 +52,10 @@ const PANEL_CAPACITY_BY_TYPE: Record<PanelTypeId, number> = {
   "standard-residential": 400,
   "large-commercial": 450,
 };
+
+const LAYOUT_FINISH_DELAY_MS = 160;
+const AREA_RECALC_DELAY_MS = 24;
+const PLANNER_SYNC_DELAY_MS = 40;
 
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -148,6 +153,7 @@ export default function App() {
   const [layoutFinished, setLayoutFinished] = useState(false);
   const [placedPanels, setPlacedPanels] = useState<PlacedPanel[]>([]);
   const [panelLayoutMessage, setPanelLayoutMessage] = useState<string | null>(null);
+  const [isExportingBlueprintReport, setIsExportingBlueprintReport] = useState(false);
   const [roofMaxPanelCount, setRoofMaxPanelCount] = useState<number | null>(null);
   const [plannerCapacityError, setPlannerCapacityError] = useState<string | null>(null);
   const [plannerInputs, setPlannerInputs] = useState<SolarFinancialInputs>(DEFAULT_PLANNER_INPUTS);
@@ -365,7 +371,7 @@ export default function App() {
 
     const finishHandle = window.setTimeout(() => {
       setLayoutFinished(true);
-    }, 1000);
+    }, LAYOUT_FINISH_DELAY_MS);
 
     return () => {
       window.clearTimeout(finishHandle);
@@ -394,7 +400,7 @@ export default function App() {
       }
 
       setRoofAreaMessage(`Area auto-calculated: ${Math.round(summary.netSqFt)} sq ft net usable.`);
-    }, 120);
+    }, AREA_RECALC_DELAY_MS);
 
     return () => {
       window.clearTimeout(areaHandle);
@@ -458,9 +464,14 @@ export default function App() {
       return;
     }
 
-    setPlacedPanels([]);
-    setPanelLayoutMessage("Roof or obstacle geometry changed. Panel layout cleared so you can repack it against the new exclusions.");
-  }, [obstacleMarkers, roofElements]);
+    if (panelLayoutMode === "manual") {
+      setPlacedPanels([]);
+      setPanelLayoutMessage("Roof or obstacle geometry changed. Manual panel stamps were cleared to avoid invalid placement overlaps.");
+      return;
+    }
+
+    setPanelLayoutMessage("Roof or obstacle geometry changed. Repacking panels with the updated roof constraints...");
+  }, [obstacleMarkers, panelLayoutMode, placedPanels.length, roofElements]);
 
   const toggleWorkspace = () => {
     setShowMapTools((previous) => {
@@ -494,6 +505,80 @@ export default function App() {
   const exportGeoJson = () => {
     downloadRoofData(roofElements, obstacleMarkers);
   };
+
+  const exportBlueprintReport = useCallback(async () => {
+    if (!mapContainerRef.current) {
+      setPanelLayoutMessage("Open the workspace map before exporting a blueprint report.");
+      return;
+    }
+
+    const previousViewMode = viewMode;
+    setIsExportingBlueprintReport(true);
+
+    try {
+      setPanelLayoutMessage("Preparing Blueprint export package...");
+
+      if (previousViewMode !== "blueprint") {
+        setViewMode("blueprint");
+        await delay(180);
+      }
+
+      mapRef.current?.invalidateSize();
+      await delay(180);
+
+      const { pdfFileName, jsonFileName } = await exportBlueprintPitchReport({
+        address,
+        coordinates,
+        mapContainer: mapContainerRef.current,
+        roofElements,
+        obstacleMarkers,
+        placedPanels,
+        panelLayoutContext,
+        panelLayoutMode,
+        panelTypeId,
+        roofAreaSummary,
+        plannerInputs,
+        plannerFinancials,
+        plannerSyncMessage,
+        panelLayoutMessage,
+        solarHeatmap,
+      });
+
+      setPanelLayoutMessage(`Export complete: ${pdfFileName} and ${jsonFileName} downloaded.`);
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("Blueprint export failed.", error);
+      }
+
+      setPanelLayoutMessage(
+        error instanceof Error ? error.message : "Blueprint export failed unexpectedly. Try again."
+      );
+    } finally {
+      if (previousViewMode !== "blueprint") {
+        setViewMode(previousViewMode);
+      }
+
+      setIsExportingBlueprintReport(false);
+    }
+  }, [
+    address,
+    coordinates,
+    mapContainerRef,
+    mapRef,
+    obstacleMarkers,
+    panelLayoutContext,
+    panelLayoutMessage,
+    panelLayoutMode,
+    panelTypeId,
+    plannerFinancials,
+    plannerInputs,
+    plannerSyncMessage,
+    placedPanels,
+    roofAreaSummary,
+    roofElements,
+    solarHeatmap,
+    viewMode,
+  ]);
 
   const autoPackPanelLayout = useCallback(async () => {
     setPanelLayoutMode("auto");
@@ -656,7 +741,7 @@ export default function App() {
           setPlannerSyncState("error");
           setPlannerSyncMessage("Planner sync hit an unexpected issue. Numeric estimates remain available while map sync pauses.");
         });
-    }, 250);
+    }, PLANNER_SYNC_DELAY_MS);
 
     return () => {
       window.clearTimeout(syncHandle);
@@ -805,6 +890,7 @@ export default function App() {
           mapContainerRef={mapContainerRef}
           onClearAll={clearAllData}
           onExport={exportGeoJson}
+          onExportBlueprintReport={exportBlueprintReport}
           onAutoDetect={runAutoDetection}
           onCalculateSqFt={calculateSqFt}
           onAcceptDetection={acceptAutoDetection}
@@ -829,6 +915,8 @@ export default function App() {
           placedPanelCount={placedPanels.length}
           estimatedPanelKw={estimatedPanelKw}
           panelLayoutMessage={panelLayoutMessage}
+          isExportingBlueprintReport={isExportingBlueprintReport}
+          isBlueprintMode={viewMode === "blueprint"}
           exclusionZoneCount={panelLayoutContext.exclusionZones.length}
           hasPrimaryRoof={hasPrimaryRoof}
           solarUnlocked={solarUnlocked}

@@ -36,6 +36,7 @@ type WorkspaceContentProps = {
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
   onClearAll: () => void;
   onExport: () => void;
+  onExportBlueprintReport: () => void;
   onAutoDetect: () => void;
   onCalculateSqFt: () => void;
   onAcceptDetection: () => void;
@@ -60,6 +61,8 @@ type WorkspaceContentProps = {
   placedPanelCount: number;
   estimatedPanelKw: number;
   panelLayoutMessage: string | null;
+  isExportingBlueprintReport: boolean;
+  isBlueprintMode: boolean;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
   solarUnlocked: boolean;
@@ -79,6 +82,7 @@ type WorkspaceDataPanelProps = {
   obstacleMarkers: ObstacleMarker[];
   onClearAll: () => void;
   onExport: () => void;
+  onExportBlueprintReport: () => void;
   onAutoDetect: () => void;
   onCalculateSqFt: () => void;
   onAcceptDetection: () => void;
@@ -103,6 +107,8 @@ type WorkspaceDataPanelProps = {
   placedPanelCount: number;
   estimatedPanelKw: number;
   panelLayoutMessage: string | null;
+  isExportingBlueprintReport: boolean;
+  isBlueprintMode: boolean;
   exclusionZoneCount: number;
   hasPrimaryRoof: boolean;
   solarUnlocked: boolean;
@@ -208,6 +214,7 @@ function WorkspaceDataPanel({
   obstacleMarkers,
   onClearAll,
   onExport,
+  onExportBlueprintReport,
   onAutoDetect,
   onCalculateSqFt,
   onAcceptDetection,
@@ -232,6 +239,8 @@ function WorkspaceDataPanel({
   placedPanelCount,
   estimatedPanelKw,
   panelLayoutMessage,
+  isExportingBlueprintReport,
+  isBlueprintMode,
   exclusionZoneCount,
   hasPrimaryRoof,
   solarUnlocked,
@@ -297,7 +306,23 @@ function WorkspaceDataPanel({
                 <Button variant="outline" className="h-9 w-full" onClick={onCalculateSqFt}>
                   <Ruler size={14} /> Calculate Area
                 </Button>
-                <Button variant="primary" className="h-9 w-full" onClick={onExport}>
+                <Button
+                  variant="primary"
+                  className="h-9 w-full"
+                  onClick={onExportBlueprintReport}
+                  disabled={!isBlueprintMode || isExportingBlueprintReport}
+                >
+                  {isExportingBlueprintReport ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download size={14} /> Export
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" className="h-9 w-full" onClick={onExport}>
                   <Download size={14} /> Export GeoJSON
                 </Button>
                 <Button
@@ -308,6 +333,12 @@ function WorkspaceDataPanel({
                   <Trash2 size={14} /> Clear All
                 </Button>
               </div>
+
+              {!isBlueprintMode && (
+                <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[10px] uppercase tracking-[0.12em] text-zinc-400">
+                  Switch to Blueprint View to enable full export report.
+                </div>
+              )}
 
               {detectionMessage && (
                 <div className="rounded-2xl border border-white/15 bg-black/40 px-4 py-3 text-[10px] uppercase tracking-[0.12em] text-zinc-300 leading-relaxed">
@@ -460,6 +491,7 @@ export function WorkspaceContent({
   mapContainerRef,
   onClearAll,
   onExport,
+  onExportBlueprintReport,
   onAutoDetect,
   onCalculateSqFt,
   onAcceptDetection,
@@ -484,6 +516,8 @@ export function WorkspaceContent({
   placedPanelCount,
   estimatedPanelKw,
   panelLayoutMessage,
+  isExportingBlueprintReport,
+  isBlueprintMode,
   exclusionZoneCount,
   hasPrimaryRoof,
   solarUnlocked,
@@ -519,6 +553,7 @@ export function WorkspaceContent({
               obstacleMarkers={obstacleMarkers}
               onClearAll={onClearAll}
               onExport={onExport}
+              onExportBlueprintReport={onExportBlueprintReport}
               onAutoDetect={onAutoDetect}
               onCalculateSqFt={onCalculateSqFt}
               onAcceptDetection={onAcceptDetection}
@@ -543,6 +578,8 @@ export function WorkspaceContent({
               placedPanelCount={placedPanelCount}
               estimatedPanelKw={estimatedPanelKw}
               panelLayoutMessage={panelLayoutMessage}
+              isExportingBlueprintReport={isExportingBlueprintReport}
+              isBlueprintMode={isBlueprintMode}
               exclusionZoneCount={exclusionZoneCount}
               hasPrimaryRoof={hasPrimaryRoof}
               solarUnlocked={solarUnlocked}
