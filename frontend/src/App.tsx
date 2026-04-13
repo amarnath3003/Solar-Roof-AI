@@ -547,6 +547,7 @@ export default function App() {
           address,
           coordinates,
           mapContainer: mapContainerRef.current,
+          leafletMap: mapRef.current,
           roofElements,
           obstacleMarkers,
           placedPanels,

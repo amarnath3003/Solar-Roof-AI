@@ -1,5 +1,6 @@
 import html2canvas from "html2canvas";
 import type { jsPDF } from "jspdf";
+import type { Map as LeafletMap } from "leaflet";
 import type { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
 import type { SolarHeatmap } from "@/lib/solarHeatmap";
 import { captureMapSnapshot } from "@/lib/mapSnapshot";
@@ -21,6 +22,7 @@ type ExportBlueprintReportInput = {
   address: string;
   coordinates: Coordinates | null;
   mapContainer: HTMLDivElement;
+  leafletMap: LeafletMap | null;
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
   placedPanels: PlacedPanel[];
@@ -50,6 +52,24 @@ type CapturedBlueprintImage = {
 type MetricItem = {
   label: string;
   value: string;
+};
+
+type StrokeStyle = {
+  stroke: string;
+  width: number;
+  dash?: number[];
+};
+
+type FillStrokeStyle = {
+  fill?: string;
+  stroke?: string;
+  width?: number;
+  dash?: number[];
+};
+
+type ScreenPoint = {
+  x: number;
+  y: number;
 };
 
 function formatMoney(value: number) {
@@ -138,9 +158,354 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
   });
 }
 
-async function captureBlueprintImage(mapContainer: HTMLDivElement): Promise<CapturedBlueprintImage | null> {
+function getBlueprintGridMajorSpacing(zoomLevel: number) {
+  const baseZoom = 19;
+  const baseSpacingPx = 48;
+  const spacing = baseSpacingPx * Math.pow(2, zoomLevel - baseZoom);
+  return Math.max(12, Math.min(320, spacing));
+}
+
+function drawGridLineSet(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  centerX: number,
+  centerY: number,
+  spacing: number
+) {
+  context.beginPath();
+
+  for (let x = centerX; x <= width + spacing; x += spacing) {
+    const snappedX = Math.round(x) + 0.5;
+    context.moveTo(snappedX, 0);
+    context.lineTo(snappedX, height);
+  }
+
+  for (let x = centerX - spacing; x >= -spacing; x -= spacing) {
+    const snappedX = Math.round(x) + 0.5;
+    context.moveTo(snappedX, 0);
+    context.lineTo(snappedX, height);
+  }
+
+  for (let y = centerY; y <= height + spacing; y += spacing) {
+    const snappedY = Math.round(y) + 0.5;
+    context.moveTo(0, snappedY);
+    context.lineTo(width, snappedY);
+  }
+
+  for (let y = centerY - spacing; y >= -spacing; y -= spacing) {
+    const snappedY = Math.round(y) + 0.5;
+    context.moveTo(0, snappedY);
+    context.lineTo(width, snappedY);
+  }
+
+  context.stroke();
+}
+
+function drawBlueprintBackground(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  zoomLevel: number
+) {
+  context.fillStyle = "#07111f";
+  context.fillRect(0, 0, width, height);
+
+  const majorSpacing = getBlueprintGridMajorSpacing(zoomLevel);
+  const minorSpacing = Math.max(majorSpacing / 4, 6);
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(232, 240, 252, 0.005625)";
+  drawGridLineSet(context, width, height, centerX, centerY, minorSpacing);
+
+  context.strokeStyle = "rgba(232, 240, 252, 0.24)";
+  drawGridLineSet(context, width, height, centerX, centerY, majorSpacing);
+}
+
+function projectLngLat(map: LeafletMap, lngLat: number[]): ScreenPoint | null {
+  const [lng, lat] = lngLat;
+
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+    return null;
+  }
+
+  const projected = map.latLngToContainerPoint([lat, lng]);
+  if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y)) {
+    return null;
+  }
+
+  return { x: projected.x, y: projected.y };
+}
+
+function traceRingPath(context: CanvasRenderingContext2D, map: LeafletMap, ring: number[][]) {
+  let started = false;
+
+  ring.forEach((coordinate) => {
+    const point = projectLngLat(map, coordinate);
+    if (!point) {
+      return;
+    }
+
+    if (!started) {
+      context.moveTo(point.x, point.y);
+      started = true;
+      return;
+    }
+
+    context.lineTo(point.x, point.y);
+  });
+
+  if (started) {
+    context.closePath();
+  }
+
+  return started;
+}
+
+function traceLinePath(context: CanvasRenderingContext2D, map: LeafletMap, line: number[][]) {
+  let started = false;
+
+  line.forEach((coordinate) => {
+    const point = projectLngLat(map, coordinate);
+    if (!point) {
+      return;
+    }
+
+    if (!started) {
+      context.moveTo(point.x, point.y);
+      started = true;
+      return;
+    }
+
+    context.lineTo(point.x, point.y);
+  });
+
+  return started;
+}
+
+function drawPolygonGeometry(
+  context: CanvasRenderingContext2D,
+  map: LeafletMap,
+  coordinates: number[][][],
+  style: FillStrokeStyle
+) {
+  context.save();
+  context.beginPath();
+
+  let hasPath = false;
+  coordinates.forEach((ring) => {
+    if (traceRingPath(context, map, ring)) {
+      hasPath = true;
+    }
+  });
+
+  if (!hasPath) {
+    context.restore();
+    return;
+  }
+
+  if (style.fill) {
+    context.fillStyle = style.fill;
+    context.fill("evenodd");
+  }
+
+  if (style.stroke) {
+    context.strokeStyle = style.stroke;
+    context.lineWidth = style.width ?? 1;
+    context.setLineDash(style.dash ?? []);
+    context.stroke();
+  }
+
+  context.restore();
+}
+
+function drawLineGeometry(
+  context: CanvasRenderingContext2D,
+  map: LeafletMap,
+  coordinates: number[][],
+  style: StrokeStyle
+) {
+  context.save();
+  context.beginPath();
+  const hasPath = traceLinePath(context, map, coordinates);
+  if (!hasPath) {
+    context.restore();
+    return;
+  }
+
+  context.strokeStyle = style.stroke;
+  context.lineWidth = style.width;
+  context.setLineDash(style.dash ?? []);
+  context.stroke();
+  context.restore();
+}
+
+function drawGeoFeature(
+  context: CanvasRenderingContext2D,
+  map: LeafletMap,
+  feature: GeoJSON.Feature,
+  polygonStyle: FillStrokeStyle,
+  lineStyle: StrokeStyle
+) {
+  const { geometry } = feature;
+
+  if (geometry.type === "Polygon") {
+    drawPolygonGeometry(context, map, geometry.coordinates, polygonStyle);
+    return;
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    geometry.coordinates.forEach((polygonCoordinates) => {
+      drawPolygonGeometry(context, map, polygonCoordinates, polygonStyle);
+    });
+    return;
+  }
+
+  if (geometry.type === "LineString") {
+    drawLineGeometry(context, map, geometry.coordinates, lineStyle);
+    return;
+  }
+
+  if (geometry.type === "MultiLineString") {
+    geometry.coordinates.forEach((lineCoordinates) => {
+      drawLineGeometry(context, map, lineCoordinates, lineStyle);
+    });
+  }
+}
+
+function renderLeafletGeometryImage(input: ExportBlueprintReportInput): CapturedBlueprintImage | null {
+  if (!input.leafletMap) {
+    return null;
+  }
+
+  const map = input.leafletMap;
+  const mapSize = map.getSize();
+  const containerRect = input.mapContainer.getBoundingClientRect();
+  const width = Math.max(1, Math.round(mapSize.x || containerRect.width));
+  const height = Math.max(1, Math.round(mapSize.y || containerRect.height));
+  if (width <= 1 || height <= 1) {
+    return null;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  drawBlueprintBackground(context, width, height, map.getZoom());
+
+  if (input.panelLayoutContext.primaryRoof) {
+    drawGeoFeature(
+      context,
+      map,
+      input.panelLayoutContext.primaryRoof as GeoJSON.Feature,
+      {
+        fill: "rgba(34, 197, 94, 0.10)",
+        stroke: "rgba(187, 247, 208, 0.85)",
+        width: 1.4,
+      },
+      {
+        stroke: "rgba(187, 247, 208, 0.85)",
+        width: 1.4,
+      }
+    );
+  }
+
+  input.roofElements.forEach((element) => {
+    const roofStroke = element.source === "auto-detected" ? "rgba(34, 211, 238, 0.95)" : "rgba(241, 245, 249, 0.95)";
+    drawGeoFeature(
+      context,
+      map,
+      element.geoJSON,
+      {
+        fill: element.geoJSON.geometry.type.includes("Polygon") ? "rgba(148, 163, 184, 0.10)" : undefined,
+        stroke: roofStroke,
+        width: element.geoJSON.geometry.type.includes("Line") ? 1.6 : 1.8,
+      },
+      {
+        stroke: roofStroke,
+        width: 1.8,
+        dash: element.geoJSON.geometry.type.includes("Line") ? [5, 4] : undefined,
+      }
+    );
+  });
+
+  input.panelLayoutContext.exclusionZones.forEach((zone) => {
+    drawGeoFeature(
+      context,
+      map,
+      zone as GeoJSON.Feature,
+      {
+        fill: "rgba(245, 158, 11, 0.20)",
+        stroke: "rgba(252, 211, 77, 0.9)",
+        width: 1.4,
+        dash: [6, 4],
+      },
+      {
+        stroke: "rgba(252, 211, 77, 0.95)",
+        width: 1.4,
+        dash: [6, 4],
+      }
+    );
+  });
+
+  input.placedPanels.forEach((panel) => {
+    drawGeoFeature(
+      context,
+      map,
+      panel.feature as GeoJSON.Feature,
+      {
+        fill: panel.source === "manual" ? "rgba(59, 130, 246, 0.72)" : "rgba(59, 130, 246, 0.58)",
+        stroke: "rgba(219, 234, 254, 0.95)",
+        width: 1,
+      },
+      {
+        stroke: "rgba(219, 234, 254, 0.95)",
+        width: 1,
+      }
+    );
+  });
+
+  input.obstacleMarkers.forEach((marker) => {
+    const point = projectLngLat(map, [marker.position[1], marker.position[0]]);
+    if (!point) {
+      return;
+    }
+
+    context.save();
+    context.beginPath();
+    context.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+    context.fillStyle = marker.source === "auto-detected" ? "rgba(249, 115, 22, 0.9)" : "rgba(250, 204, 21, 0.9)";
+    context.fill();
+    context.lineWidth = 1.6;
+    context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+    context.stroke();
+    context.restore();
+  });
+
+  return {
+    dataUrl: canvas.toDataURL("image/png"),
+    width,
+    height,
+  };
+}
+
+async function captureBlueprintImage(input: ExportBlueprintReportInput): Promise<CapturedBlueprintImage | null> {
+  const { mapContainer } = input;
   await requestAnimationFrameAsync();
   await requestAnimationFrameAsync();
+
+  // Prefer deterministic Leaflet geometry rendering for Blueprint exports.
+  const geometryImage = renderLeafletGeometryImage(input);
+  if (geometryImage) {
+    return geometryImage;
+  }
 
   try {
     const snapshot = await withTimeout(
@@ -453,7 +818,7 @@ export async function exportBlueprintPitchReport(
   const fileTimestamp = timestampForFile(now);
   const jsonFileName = `${filePrefix}-${fileTimestamp}-full-export.json`;
   const pdfFileName = `${filePrefix}-${fileTimestamp}-pitch-report.pdf`;
-  const image = await captureBlueprintImage(input.mapContainer);
+  const image = await captureBlueprintImage(input);
   const featureCollection = buildFeatureCollection(
     input.roofElements,
     input.obstacleMarkers,
