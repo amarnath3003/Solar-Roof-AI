@@ -1,0 +1,6 @@
+[build]
+  command = "npm run build --workspace frontend"
+  publish = "frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
