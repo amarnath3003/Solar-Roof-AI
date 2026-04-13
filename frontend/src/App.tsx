@@ -56,6 +56,9 @@ const PANEL_CAPACITY_BY_TYPE: Record<PanelTypeId, number> = {
 const LAYOUT_FINISH_DELAY_MS = 160;
 const AREA_RECALC_DELAY_MS = 24;
 const PLANNER_SYNC_DELAY_MS = 40;
+const SATELLITE_CAPTURE_FOCUS_MULTIPLIER = 2;
+const SATELLITE_CAPTURE_BASE_PADDING_PX = 84;
+const SATELLITE_CAPTURE_BASE_ZOOM_STEP = 0.45;
 
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -128,6 +131,104 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
         reject(error);
       });
   });
+}
+
+type CaptureBounds = {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+};
+
+function createCaptureBounds(): CaptureBounds {
+  return {
+    minLat: Number.POSITIVE_INFINITY,
+    maxLat: Number.NEGATIVE_INFINITY,
+    minLng: Number.POSITIVE_INFINITY,
+    maxLng: Number.NEGATIVE_INFINITY,
+  };
+}
+
+function includeCoordinateInBounds(bounds: CaptureBounds, lng: number, lat: number) {
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+    return;
+  }
+
+  bounds.minLat = Math.min(bounds.minLat, lat);
+  bounds.maxLat = Math.max(bounds.maxLat, lat);
+  bounds.minLng = Math.min(bounds.minLng, lng);
+  bounds.maxLng = Math.max(bounds.maxLng, lng);
+}
+
+function includeGeometryInBounds(bounds: CaptureBounds, geometry: GeoJSON.Geometry) {
+  if (geometry.type === "Point") {
+    includeCoordinateInBounds(bounds, geometry.coordinates[0], geometry.coordinates[1]);
+    return;
+  }
+
+  if (geometry.type === "MultiPoint" || geometry.type === "LineString") {
+    geometry.coordinates.forEach(([lng, lat]) => includeCoordinateInBounds(bounds, lng, lat));
+    return;
+  }
+
+  if (geometry.type === "MultiLineString" || geometry.type === "Polygon") {
+    geometry.coordinates.forEach((lineOrRing) => {
+      lineOrRing.forEach(([lng, lat]) => includeCoordinateInBounds(bounds, lng, lat));
+    });
+    return;
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    geometry.coordinates.forEach((polygonCoordinates) => {
+      polygonCoordinates.forEach((ring) => {
+        ring.forEach(([lng, lat]) => includeCoordinateInBounds(bounds, lng, lat));
+      });
+    });
+  }
+}
+
+function hasValidBounds(bounds: CaptureBounds) {
+  return (
+    Number.isFinite(bounds.minLat)
+    && Number.isFinite(bounds.maxLat)
+    && Number.isFinite(bounds.minLng)
+    && Number.isFinite(bounds.maxLng)
+  );
+}
+
+function getSatelliteCaptureBounds(
+  roofElements: RoofElement[],
+  obstacleMarkers: ObstacleMarker[],
+  placedPanels: PlacedPanel[],
+  panelLayoutContext: ReturnType<typeof buildPanelLayoutContext>
+) {
+  const bounds = createCaptureBounds();
+
+  roofElements.forEach((element) => includeGeometryInBounds(bounds, element.geoJSON.geometry));
+  obstacleMarkers.forEach((marker) => includeCoordinateInBounds(bounds, marker.position[1], marker.position[0]));
+  placedPanels.forEach((panel) => includeGeometryInBounds(bounds, panel.feature.geometry));
+
+  if (panelLayoutContext.primaryRoof) {
+    includeGeometryInBounds(bounds, panelLayoutContext.primaryRoof.geometry);
+  }
+
+  panelLayoutContext.exclusionZones.forEach((zone) => includeGeometryInBounds(bounds, zone.geometry));
+
+  if (!hasValidBounds(bounds)) {
+    return null;
+  }
+
+  const latSpan = bounds.maxLat - bounds.minLat;
+  const lngSpan = bounds.maxLng - bounds.minLng;
+  const latPad = Math.max(latSpan * 0.4, 0.00008);
+  const lngPad = Math.max(lngSpan * 0.4, 0.00008);
+
+  return {
+    minLat: bounds.minLat - latPad,
+    maxLat: bounds.maxLat + latPad,
+    minLng: bounds.minLng - lngPad,
+    maxLng: bounds.maxLng + lngPad,
+  };
 }
 
 function createPlacedPanelRecord(
@@ -528,18 +629,76 @@ export default function App() {
       return;
     }
 
+    const activeMap = mapRef.current;
     const previousViewMode = viewMode;
+    const previousCenter = activeMap?.getCenter() ?? null;
+    const previousZoom = activeMap?.getZoom() ?? null;
     setIsExportingBlueprintReport(true);
 
     try {
       setPanelLayoutMessage("Preparing Blueprint export package...");
 
-      if (previousViewMode !== "blueprint") {
-        setViewMode("blueprint");
-        await delay(180);
+      let satelliteImage: { dataUrl: string; width: number; height: number } | null = null;
+
+      setViewMode("satellite");
+      await delay(220);
+
+      if (activeMap) {
+        const safeMaxSatelliteZoom = 19.45;
+        const minimumFocusZoom = 18.9;
+        const capturePaddingPx = Math.max(
+          18,
+          Math.round(SATELLITE_CAPTURE_BASE_PADDING_PX / SATELLITE_CAPTURE_FOCUS_MULTIPLIER)
+        );
+        const fallbackZoomStep = SATELLITE_CAPTURE_BASE_ZOOM_STEP * SATELLITE_CAPTURE_FOCUS_MULTIPLIER;
+        const captureBounds = getSatelliteCaptureBounds(
+          roofElements,
+          obstacleMarkers,
+          placedPanels,
+          panelLayoutContext
+        );
+
+        if (captureBounds) {
+          activeMap.fitBounds(
+            [
+              [captureBounds.minLat, captureBounds.minLng],
+              [captureBounds.maxLat, captureBounds.maxLng],
+            ],
+            {
+              padding: [capturePaddingPx, capturePaddingPx],
+              maxZoom: safeMaxSatelliteZoom,
+              animate: false,
+            }
+          );
+        } else if (coordinates) {
+          const targetZoom = Math.min(
+            safeMaxSatelliteZoom,
+            Math.max(minimumFocusZoom, activeMap.getZoom() + fallbackZoomStep)
+          );
+          activeMap.setView([coordinates.lat, coordinates.lng], targetZoom, { animate: false });
+        }
+
+        await delay(220);
+        activeMap.invalidateSize();
       }
 
-      mapRef.current?.invalidateSize();
+      await delay(220);
+
+      try {
+        const satelliteSnapshot = await captureMapSnapshot(mapContainerRef.current, mapRef.current ?? undefined);
+        satelliteImage = {
+          dataUrl: `data:image/png;base64,${satelliteSnapshot.snapshotBase64}`,
+          width: satelliteSnapshot.width,
+          height: satelliteSnapshot.height,
+        };
+      } catch {
+        satelliteImage = null;
+      }
+
+      setViewMode("blueprint");
+      await delay(180);
+
+      activeMap?.invalidateSize();
       await delay(180);
 
       const { pdfFileName, svgFileName } = await withTimeout(
@@ -559,6 +718,7 @@ export default function App() {
           plannerSyncMessage,
           panelLayoutMessage,
           solarHeatmap,
+          satelliteImage,
           downloadJson: false,
         }),
         20_000,
@@ -579,6 +739,10 @@ export default function App() {
         error instanceof Error ? error.message : "Blueprint export failed unexpectedly. Try again."
       );
     } finally {
+      if (activeMap && previousCenter && previousZoom !== null) {
+        activeMap.setView(previousCenter, previousZoom, { animate: false });
+      }
+
       if (previousViewMode !== "blueprint") {
         setViewMode(previousViewMode);
       }

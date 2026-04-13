@@ -31,6 +31,11 @@ type ExportBlueprintReportInput = {
   plannerSyncMessage: string;
   panelLayoutMessage: string | null;
   solarHeatmap: SolarHeatmap | null;
+  satelliteImage: {
+    dataUrl: string;
+    width: number;
+    height: number;
+  } | null;
   downloadJson?: boolean;
 };
 
@@ -831,6 +836,24 @@ function drawProjectionChart(
   pdf.text("Without solar", x + 109, legendY + 2);
 }
 
+function getContainedRect(
+  containerX: number,
+  containerY: number,
+  containerWidth: number,
+  containerHeight: number,
+  imageWidth: number,
+  imageHeight: number
+) {
+  const safeImageWidth = Math.max(1, imageWidth);
+  const safeImageHeight = Math.max(1, imageHeight);
+  const scale = Math.min(containerWidth / safeImageWidth, containerHeight / safeImageHeight);
+  const width = safeImageWidth * scale;
+  const height = safeImageHeight * scale;
+  const x = containerX + (containerWidth - width) / 2;
+  const y = containerY + (containerHeight - height) / 2;
+  return { x, y, width, height };
+}
+
 function drawProjectionTable(
   pdf: jsPDF,
   data: SolarFinancialResults["financialProjection"],
@@ -933,6 +956,7 @@ export async function exportBlueprintPitchReport(
       coordinates: input.coordinates,
       exportVersion: "1.0",
       vectorSvgAvailable: layoutVector !== null,
+      satelliteImageIncluded: input.satelliteImage !== null,
     },
     geometry: {
       roofElementCount: input.roofElements.length,
@@ -1013,31 +1037,104 @@ export async function exportBlueprintPitchReport(
     cursorY += 14;
   }
 
-  ensureSpace(314);
-  drawSectionHeading(pdf, "Layout Plan (Vector)", PAGE_MARGIN, cursorY);
+  ensureSpace(334);
+  drawSectionHeading(pdf, "Layout Comparison (Vector Blueprint vs Satellite)", PAGE_MARGIN, cursorY);
   cursorY += 10;
-  const vectorBoxHeight = 286;
+  const comparisonBoxHeight = 304;
   pdf.setDrawColor(203, 213, 225);
-  pdf.roundedRect(PAGE_MARGIN - 1, cursorY, contentWidth + 2, vectorBoxHeight, 6, 6, "S");
+  pdf.roundedRect(PAGE_MARGIN - 1, cursorY, contentWidth + 2, comparisonBoxHeight, 6, 6, "S");
 
-  if (layoutVector) {
-    drawVectorLayoutInPdf(
-      pdf,
-      input,
-      layoutVector.bounds,
-      PAGE_MARGIN + 6,
-      cursorY + 6,
-      contentWidth - 12,
-      vectorBoxHeight - 12
+  if (input.satelliteImage) {
+    const columnGap = 10;
+    const columnWidth = (contentWidth - columnGap) / 2;
+    const vectorX = PAGE_MARGIN + 4;
+    const satelliteX = vectorX + columnWidth + columnGap;
+    const panelY = cursorY + 22;
+    const panelHeight = comparisonBoxHeight - 28;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text("VECTOR BLUEPRINT", vectorX + 2, cursorY + 14);
+    pdf.text("SATELLITE PHOTO", satelliteX + 2, cursorY + 14);
+
+    pdf.setFillColor(248, 250, 252);
+    pdf.roundedRect(vectorX, panelY, columnWidth, panelHeight, 4, 4, "F");
+    pdf.roundedRect(satelliteX, panelY, columnWidth, panelHeight, 4, 4, "F");
+
+    if (layoutVector) {
+      drawVectorLayoutInPdf(
+        pdf,
+        input,
+        layoutVector.bounds,
+        vectorX + 4,
+        panelY + 4,
+        columnWidth - 8,
+        panelHeight - 8
+      );
+    } else {
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text("No drawable layout geometry found.", vectorX + 10, panelY + 20);
+    }
+
+    const fittedSatellite = getContainedRect(
+      satelliteX + 4,
+      panelY + 4,
+      columnWidth - 8,
+      panelHeight - 8,
+      input.satelliteImage.width,
+      input.satelliteImage.height
+    );
+    pdf.addImage(
+      input.satelliteImage.dataUrl,
+      "PNG",
+      fittedSatellite.x,
+      fittedSatellite.y,
+      fittedSatellite.width,
+      fittedSatellite.height,
+      undefined,
+      "FAST"
     );
   } else {
+    const vectorX = PAGE_MARGIN + 4;
+    const panelY = cursorY + 22;
+    const panelWidth = contentWidth - 8;
+    const panelHeight = comparisonBoxHeight - 28;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text("VECTOR BLUEPRINT", vectorX + 2, cursorY + 14);
+
+    pdf.setFillColor(248, 250, 252);
+    pdf.roundedRect(vectorX, panelY, panelWidth, panelHeight, 4, 4, "F");
+
+    if (layoutVector) {
+      drawVectorLayoutInPdf(
+        pdf,
+        input,
+        layoutVector.bounds,
+        vectorX + 4,
+        panelY + 4,
+        panelWidth - 8,
+        panelHeight - 8
+      );
+    } else {
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text("No drawable layout geometry found. Draw roof geometry, obstacles, or panels before exporting.", vectorX + 8, panelY + 18);
+    }
+
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
+    pdf.setFontSize(8);
     pdf.setTextColor(100, 116, 139);
-    pdf.text("No drawable layout geometry found. Draw roof geometry, obstacles, or panels before exporting.", PAGE_MARGIN + 10, cursorY + 22);
+    pdf.text("Satellite image was unavailable for this export run.", vectorX + 8, panelY + panelHeight - 8);
   }
 
-  cursorY += vectorBoxHeight + 16;
+  cursorY += comparisonBoxHeight + 16;
 
   const narrative = `This proposal models a ${input.plannerFinancials.activePanelCount}-panel ${panelType.label.toLowerCase()} system sized at ${formatNumber(input.plannerFinancials.installationSizeKw, 2)} kW. The plan offsets about ${formatPercent(input.plannerFinancials.energyCoveredDisplayPercent, 1)} of annual demand, delivers estimated 20-year savings of ${formatMoney(input.plannerFinancials.totalTwentyYearSavings)}, and reaches break-even in ${input.plannerFinancials.breakEvenCalendarYear ?? "the post-20-year horizon"}.`;
   const narrativeLines = pdf.splitTextToSize(narrative, contentWidth);
@@ -1183,6 +1280,7 @@ export async function exportBlueprintPitchReport(
   const packageSummaryLines = [
     "Export package includes:",
     "- vector SVG layout auto-zoomed to maximum geometry coverage",
+    "- side-by-side PDF comparison of vector blueprint and satellite house imagery",
     "- full roof line geometry and polygons",
     "- obstacle markers and exclusion zones",
     "- roof layout panel polygons",
