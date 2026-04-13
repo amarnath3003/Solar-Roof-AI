@@ -114,6 +114,22 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+
+    promise
+      .then((value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
+
 function createPlacedPanelRecord(
   feature: GeoJSON.Feature<GeoJSON.Polygon>,
   panelTypeId: PanelTypeId,
@@ -526,25 +542,30 @@ export default function App() {
       mapRef.current?.invalidateSize();
       await delay(180);
 
-      const { pdfFileName, jsonFileName } = await exportBlueprintPitchReport({
-        address,
-        coordinates,
-        mapContainer: mapContainerRef.current,
-        roofElements,
-        obstacleMarkers,
-        placedPanels,
-        panelLayoutContext,
-        panelLayoutMode,
-        panelTypeId,
-        roofAreaSummary,
-        plannerInputs,
-        plannerFinancials,
-        plannerSyncMessage,
-        panelLayoutMessage,
-        solarHeatmap,
-      });
+      const { pdfFileName } = await withTimeout(
+        exportBlueprintPitchReport({
+          address,
+          coordinates,
+          mapContainer: mapContainerRef.current,
+          roofElements,
+          obstacleMarkers,
+          placedPanels,
+          panelLayoutContext,
+          panelLayoutMode,
+          panelTypeId,
+          roofAreaSummary,
+          plannerInputs,
+          plannerFinancials,
+          plannerSyncMessage,
+          panelLayoutMessage,
+          solarHeatmap,
+          downloadJson: false,
+        }),
+        20_000,
+        "Export took too long. Try again after zoom settles, or switch to Blueprint View first."
+      );
 
-      setPanelLayoutMessage(`Export complete: ${pdfFileName} and ${jsonFileName} downloaded.`);
+      setPanelLayoutMessage(`Export complete: ${pdfFileName} downloaded.`);
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("Blueprint export failed.", error);

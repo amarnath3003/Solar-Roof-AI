@@ -2,6 +2,7 @@ import html2canvas from "html2canvas";
 import type { jsPDF } from "jspdf";
 import type { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
 import type { SolarHeatmap } from "@/lib/solarHeatmap";
+import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import type {
   Coordinates,
   ObstacleMarker,
@@ -32,6 +33,7 @@ type ExportBlueprintReportInput = {
   plannerSyncMessage: string;
   panelLayoutMessage: string | null;
   solarHeatmap: SolarHeatmap | null;
+  downloadJson?: boolean;
 };
 
 type ExportBlueprintReportResult = {
@@ -120,24 +122,64 @@ function requestAnimationFrameAsync() {
   });
 }
 
-async function captureBlueprintImage(mapContainer: HTMLDivElement): Promise<CapturedBlueprintImage> {
-  await requestAnimationFrameAsync();
-  await requestAnimationFrameAsync();
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
 
-  const canvas = await html2canvas(mapContainer, {
-    useCORS: true,
-    allowTaint: false,
-    backgroundColor: "#07111f",
-    logging: false,
-    imageTimeout: 6_000,
-    scale: 1.1,
+    promise
+      .then((value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
   });
+}
 
-  return {
-    dataUrl: canvas.toDataURL("image/png"),
-    width: canvas.width,
-    height: canvas.height,
-  };
+async function captureBlueprintImage(mapContainer: HTMLDivElement): Promise<CapturedBlueprintImage | null> {
+  await requestAnimationFrameAsync();
+  await requestAnimationFrameAsync();
+
+  try {
+    const snapshot = await withTimeout(
+      captureMapSnapshot(mapContainer),
+      8_000,
+      "Blueprint snapshot timed out while preparing the PDF image."
+    );
+
+    return {
+      dataUrl: `data:image/png;base64,${snapshot.snapshotBase64}`,
+      width: snapshot.width,
+      height: snapshot.height,
+    };
+  } catch {
+    // Fallback to html2canvas when tile-based capture cannot compose the viewport.
+  }
+
+  try {
+    const canvas = await withTimeout(
+      html2canvas(mapContainer, {
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: "#07111f",
+        logging: false,
+        imageTimeout: 6_000,
+        scale: 1.1,
+      }),
+      8_000,
+      "Blueprint canvas capture timed out while preparing the PDF image."
+    );
+
+    return {
+      dataUrl: canvas.toDataURL("image/png"),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function buildFeatureCollection(
@@ -460,7 +502,9 @@ export async function exportBlueprintPitchReport(
     },
   };
 
-  downloadBlob(new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" }), jsonFileName);
+  if (input.downloadJson) {
+    downloadBlob(new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" }), jsonFileName);
+  }
 
   const { jsPDF: PdfConstructor } = await import("jspdf");
   const pdf = new PdfConstructor({
@@ -504,20 +548,29 @@ export async function exportBlueprintPitchReport(
     cursorY += 14;
   }
 
-  const imageMaxHeight = 250;
-  const imageRatio = image.height > 0 ? image.width / image.height : 1;
-  let imageWidth = contentWidth;
-  let imageHeight = imageWidth / imageRatio;
-  if (imageHeight > imageMaxHeight) {
-    imageHeight = imageMaxHeight;
-    imageWidth = imageHeight * imageRatio;
-  }
+  if (image) {
+    const imageMaxHeight = 250;
+    const imageRatio = image.height > 0 ? image.width / image.height : 1;
+    let imageWidth = contentWidth;
+    let imageHeight = imageWidth / imageRatio;
+    if (imageHeight > imageMaxHeight) {
+      imageHeight = imageMaxHeight;
+      imageWidth = imageHeight * imageRatio;
+    }
 
-  ensureSpace(imageHeight + 24);
-  pdf.setDrawColor(203, 213, 225);
-  pdf.roundedRect(PAGE_MARGIN - 2, cursorY - 2, imageWidth + 4, imageHeight + 4, 8, 8, "S");
-  pdf.addImage(image.dataUrl, "PNG", PAGE_MARGIN, cursorY, imageWidth, imageHeight, undefined, "FAST");
-  cursorY += imageHeight + 18;
+    ensureSpace(imageHeight + 24);
+    pdf.setDrawColor(203, 213, 225);
+    pdf.roundedRect(PAGE_MARGIN - 2, cursorY - 2, imageWidth + 4, imageHeight + 4, 8, 8, "S");
+    pdf.addImage(image.dataUrl, "PNG", PAGE_MARGIN, cursorY, imageWidth, imageHeight, undefined, "FAST");
+    cursorY += imageHeight + 18;
+  } else {
+    ensureSpace(26);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text("Blueprint image capture unavailable for this export run. Financial and geometry report included below.", PAGE_MARGIN, cursorY);
+    cursorY += 18;
+  }
 
   const narrative = `This blueprint proposes a ${input.plannerFinancials.activePanelCount}-panel ${PANEL_TYPES[input.panelTypeId].label.toLowerCase()} system sized at ${formatNumber(input.plannerFinancials.installationSizeKw, 2)} kW. It offsets about ${formatPercent(input.plannerFinancials.energyCoveredDisplayPercent, 1)} of annual demand, with projected 20-year savings of ${formatMoney(input.plannerFinancials.totalTwentyYearSavings)} and break-even ${input.plannerFinancials.breakEvenCalendarYear ?? "outside projection window"}.`;
   const narrativeLines = pdf.splitTextToSize(narrative, contentWidth);
@@ -600,7 +653,8 @@ export async function exportBlueprintPitchReport(
   pdf.setTextColor(71, 85, 105);
   pdf.text(wrappedPackageSummary, PAGE_MARGIN, cursorY);
 
-  pdf.save(pdfFileName);
+  const pdfBlob = pdf.output("blob");
+  downloadBlob(pdfBlob, pdfFileName);
 
   return {
     pdfFileName,
