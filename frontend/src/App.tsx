@@ -56,10 +56,6 @@ const PANEL_CAPACITY_BY_TYPE: Record<PanelTypeId, number> = {
 const LAYOUT_FINISH_DELAY_MS = 160;
 const AREA_RECALC_DELAY_MS = 24;
 const PLANNER_SYNC_DELAY_MS = 40;
-const SATELLITE_CAPTURE_MAX_ZOOM = 20;
-const SATELLITE_CAPTURE_MIN_FOCUS_ZOOM = 20;
-const SATELLITE_CAPTURE_PADDING_PX = 16;
-const SATELLITE_CAPTURE_FALLBACK_ZOOM_STEPS = [0, 0.35, 0.7, 1.05, 1.4] as const;
 
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -85,104 +81,6 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
         reject(error);
       });
   });
-}
-
-type CaptureBounds = {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-};
-
-function createCaptureBounds(): CaptureBounds {
-  return {
-    minLat: Number.POSITIVE_INFINITY,
-    maxLat: Number.NEGATIVE_INFINITY,
-    minLng: Number.POSITIVE_INFINITY,
-    maxLng: Number.NEGATIVE_INFINITY,
-  };
-}
-
-function includeCoordinateInBounds(bounds: CaptureBounds, lng: number, lat: number) {
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
-    return;
-  }
-
-  bounds.minLat = Math.min(bounds.minLat, lat);
-  bounds.maxLat = Math.max(bounds.maxLat, lat);
-  bounds.minLng = Math.min(bounds.minLng, lng);
-  bounds.maxLng = Math.max(bounds.maxLng, lng);
-}
-
-function includeGeometryInBounds(bounds: CaptureBounds, geometry: GeoJSON.Geometry) {
-  if (geometry.type === "Point") {
-    includeCoordinateInBounds(bounds, geometry.coordinates[0], geometry.coordinates[1]);
-    return;
-  }
-
-  if (geometry.type === "MultiPoint" || geometry.type === "LineString") {
-    geometry.coordinates.forEach(([lng, lat]) => includeCoordinateInBounds(bounds, lng, lat));
-    return;
-  }
-
-  if (geometry.type === "MultiLineString" || geometry.type === "Polygon") {
-    geometry.coordinates.forEach((lineOrRing) => {
-      lineOrRing.forEach(([lng, lat]) => includeCoordinateInBounds(bounds, lng, lat));
-    });
-    return;
-  }
-
-  if (geometry.type === "MultiPolygon") {
-    geometry.coordinates.forEach((polygonCoordinates) => {
-      polygonCoordinates.forEach((ring) => {
-        ring.forEach(([lng, lat]) => includeCoordinateInBounds(bounds, lng, lat));
-      });
-    });
-  }
-}
-
-function hasValidBounds(bounds: CaptureBounds) {
-  return (
-    Number.isFinite(bounds.minLat)
-    && Number.isFinite(bounds.maxLat)
-    && Number.isFinite(bounds.minLng)
-    && Number.isFinite(bounds.maxLng)
-  );
-}
-
-function getSatelliteCaptureBounds(
-  roofElements: RoofElement[],
-  obstacleMarkers: ObstacleMarker[],
-  placedPanels: PlacedPanel[],
-  panelLayoutContext: ReturnType<typeof buildPanelLayoutContext>
-) {
-  const bounds = createCaptureBounds();
-
-  roofElements.forEach((element) => includeGeometryInBounds(bounds, element.geoJSON.geometry));
-  obstacleMarkers.forEach((marker) => includeCoordinateInBounds(bounds, marker.position[1], marker.position[0]));
-  placedPanels.forEach((panel) => includeGeometryInBounds(bounds, panel.feature.geometry));
-
-  if (panelLayoutContext.primaryRoof) {
-    includeGeometryInBounds(bounds, panelLayoutContext.primaryRoof.geometry);
-  }
-
-  panelLayoutContext.exclusionZones.forEach((zone) => includeGeometryInBounds(bounds, zone.geometry));
-
-  if (!hasValidBounds(bounds)) {
-    return null;
-  }
-
-  const latSpan = bounds.maxLat - bounds.minLat;
-  const lngSpan = bounds.maxLng - bounds.minLng;
-  const latPad = Math.max(latSpan * 0.4, 0.00008);
-  const lngPad = Math.max(lngSpan * 0.4, 0.00008);
-
-  return {
-    minLat: bounds.minLat - latPad,
-    maxLat: bounds.maxLat + latPad,
-    minLng: bounds.minLng - lngPad,
-    maxLng: bounds.maxLng + lngPad,
-  };
 }
 
 function createPlacedPanelRecord(
@@ -594,61 +492,31 @@ export default function App() {
       await delay(220);
 
       if (activeMap) {
-        const captureBounds = getSatelliteCaptureBounds(
-          roofElements,
-          obstacleMarkers,
-          placedPanels,
-          panelLayoutContext
-        );
-
-        if (captureBounds) {
-          activeMap.fitBounds(
-            [
-              [captureBounds.minLat, captureBounds.minLng],
-              [captureBounds.maxLat, captureBounds.maxLng],
-            ],
-            {
-              padding: [SATELLITE_CAPTURE_PADDING_PX, SATELLITE_CAPTURE_PADDING_PX],
-              maxZoom: SATELLITE_CAPTURE_MAX_ZOOM,
-              animate: false,
-            }
-          );
-        } else if (coordinates) {
-          const targetZoom = Math.min(
-            SATELLITE_CAPTURE_MAX_ZOOM,
-            Math.max(SATELLITE_CAPTURE_MIN_FOCUS_ZOOM, activeMap.getZoom() + 1.25)
-          );
-          activeMap.setView([coordinates.lat, coordinates.lng], targetZoom, { animate: false });
+        if (previousCenter && previousZoom !== null) {
+          activeMap.setView(previousCenter, previousZoom, { animate: false });
         }
 
-        await delay(220);
+        await delay(180);
         activeMap.invalidateSize();
-      }
+        await delay(140);
 
-      await delay(220);
-
-      if (activeMap) {
-        const baseCaptureZoom = activeMap.getZoom();
-
-        for (const zoomDrop of SATELLITE_CAPTURE_FALLBACK_ZOOM_STEPS) {
-          const attemptZoom = Math.min(
-            SATELLITE_CAPTURE_MAX_ZOOM,
-            Math.max(SATELLITE_CAPTURE_MIN_FOCUS_ZOOM, baseCaptureZoom - zoomDrop)
-          );
-
-          activeMap.setZoom(attemptZoom, { animate: false });
-          await delay(140);
-          activeMap.invalidateSize();
-          await delay(100);
-
+        try {
+          const satelliteSnapshot = await captureMapSnapshot(mapContainerRef.current, activeMap);
+          satelliteImage = {
+            dataUrl: `data:image/png;base64,${satelliteSnapshot.snapshotBase64}`,
+            width: satelliteSnapshot.width,
+            height: satelliteSnapshot.height,
+          };
+        } catch {
           try {
-            const satelliteSnapshot = await captureMapSnapshot(mapContainerRef.current, activeMap);
+            await delay(220);
+            activeMap.invalidateSize();
+            const retrySnapshot = await captureMapSnapshot(mapContainerRef.current, activeMap);
             satelliteImage = {
-              dataUrl: `data:image/png;base64,${satelliteSnapshot.snapshotBase64}`,
-              width: satelliteSnapshot.width,
-              height: satelliteSnapshot.height,
+              dataUrl: `data:image/png;base64,${retrySnapshot.snapshotBase64}`,
+              width: retrySnapshot.width,
+              height: retrySnapshot.height,
             };
-            break;
           } catch {
             satelliteImage = null;
           }
