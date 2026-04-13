@@ -1,9 +1,6 @@
-import html2canvas from "html2canvas";
 import type { jsPDF } from "jspdf";
-import type { Map as LeafletMap } from "leaflet";
 import type { SolarFinancialInputs, SolarFinancialResults } from "@/hooks/useSolarFinancials";
 import type { SolarHeatmap } from "@/lib/solarHeatmap";
-import { captureMapSnapshot } from "@/lib/mapSnapshot";
 import type {
   Coordinates,
   ObstacleMarker,
@@ -22,7 +19,6 @@ type ExportBlueprintReportInput = {
   address: string;
   coordinates: Coordinates | null;
   mapContainer: HTMLDivElement;
-  leafletMap: LeafletMap | null;
   roofElements: RoofElement[];
   obstacleMarkers: ObstacleMarker[];
   placedPanels: PlacedPanel[];
@@ -41,12 +37,14 @@ type ExportBlueprintReportInput = {
 type ExportBlueprintReportResult = {
   pdfFileName: string;
   jsonFileName: string;
+  svgFileName: string | null;
 };
 
-type CapturedBlueprintImage = {
-  dataUrl: string;
+type LayoutVectorAsset = {
+  svgMarkup: string;
   width: number;
   height: number;
+  bounds: LayoutBounds;
 };
 
 type MetricItem = {
@@ -70,6 +68,13 @@ type FillStrokeStyle = {
 type ScreenPoint = {
   x: number;
   y: number;
+};
+
+type LayoutBounds = {
+  minLng: number;
+  maxLng: number;
+  minLat: number;
+  maxLat: number;
 };
 
 function formatMoney(value: number) {
@@ -136,415 +141,438 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function requestAnimationFrameAsync() {
-  return new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => resolve());
-  });
+function createBounds(): LayoutBounds {
+  return {
+    minLng: Number.POSITIVE_INFINITY,
+    maxLng: Number.NEGATIVE_INFINITY,
+    minLat: Number.POSITIVE_INFINITY,
+    maxLat: Number.NEGATIVE_INFINITY,
+  };
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-
-    promise
-      .then((value) => {
-        window.clearTimeout(timeoutId);
-        resolve(value);
-      })
-      .catch((error) => {
-        window.clearTimeout(timeoutId);
-        reject(error);
-      });
-  });
-}
-
-function getBlueprintGridMajorSpacing(zoomLevel: number) {
-  const baseZoom = 19;
-  const baseSpacingPx = 48;
-  const spacing = baseSpacingPx * Math.pow(2, zoomLevel - baseZoom);
-  return Math.max(12, Math.min(320, spacing));
-}
-
-function drawGridLineSet(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  centerX: number,
-  centerY: number,
-  spacing: number
-) {
-  context.beginPath();
-
-  for (let x = centerX; x <= width + spacing; x += spacing) {
-    const snappedX = Math.round(x) + 0.5;
-    context.moveTo(snappedX, 0);
-    context.lineTo(snappedX, height);
-  }
-
-  for (let x = centerX - spacing; x >= -spacing; x -= spacing) {
-    const snappedX = Math.round(x) + 0.5;
-    context.moveTo(snappedX, 0);
-    context.lineTo(snappedX, height);
-  }
-
-  for (let y = centerY; y <= height + spacing; y += spacing) {
-    const snappedY = Math.round(y) + 0.5;
-    context.moveTo(0, snappedY);
-    context.lineTo(width, snappedY);
-  }
-
-  for (let y = centerY - spacing; y >= -spacing; y -= spacing) {
-    const snappedY = Math.round(y) + 0.5;
-    context.moveTo(0, snappedY);
-    context.lineTo(width, snappedY);
-  }
-
-  context.stroke();
-}
-
-function drawBlueprintBackground(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  zoomLevel: number
-) {
-  context.fillStyle = "#07111f";
-  context.fillRect(0, 0, width, height);
-
-  const majorSpacing = getBlueprintGridMajorSpacing(zoomLevel);
-  const minorSpacing = Math.max(majorSpacing / 4, 6);
-  const centerX = width / 2;
-  const centerY = height / 2;
-
-  context.lineWidth = 1;
-  context.strokeStyle = "rgba(232, 240, 252, 0.005625)";
-  drawGridLineSet(context, width, height, centerX, centerY, minorSpacing);
-
-  context.strokeStyle = "rgba(232, 240, 252, 0.24)";
-  drawGridLineSet(context, width, height, centerX, centerY, majorSpacing);
-}
-
-function projectLngLat(map: LeafletMap, lngLat: number[]): ScreenPoint | null {
-  const [lng, lat] = lngLat;
-
+function includeCoordinate(bounds: LayoutBounds, coordinate: number[]) {
+  const [lng, lat] = coordinate;
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
-    return null;
-  }
-
-  const projected = map.latLngToContainerPoint([lat, lng]);
-  if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y)) {
-    return null;
-  }
-
-  return { x: projected.x, y: projected.y };
-}
-
-function traceRingPath(context: CanvasRenderingContext2D, map: LeafletMap, ring: number[][]) {
-  let started = false;
-
-  ring.forEach((coordinate) => {
-    const point = projectLngLat(map, coordinate);
-    if (!point) {
-      return;
-    }
-
-    if (!started) {
-      context.moveTo(point.x, point.y);
-      started = true;
-      return;
-    }
-
-    context.lineTo(point.x, point.y);
-  });
-
-  if (started) {
-    context.closePath();
-  }
-
-  return started;
-}
-
-function traceLinePath(context: CanvasRenderingContext2D, map: LeafletMap, line: number[][]) {
-  let started = false;
-
-  line.forEach((coordinate) => {
-    const point = projectLngLat(map, coordinate);
-    if (!point) {
-      return;
-    }
-
-    if (!started) {
-      context.moveTo(point.x, point.y);
-      started = true;
-      return;
-    }
-
-    context.lineTo(point.x, point.y);
-  });
-
-  return started;
-}
-
-function drawPolygonGeometry(
-  context: CanvasRenderingContext2D,
-  map: LeafletMap,
-  coordinates: number[][][],
-  style: FillStrokeStyle
-) {
-  context.save();
-  context.beginPath();
-
-  let hasPath = false;
-  coordinates.forEach((ring) => {
-    if (traceRingPath(context, map, ring)) {
-      hasPath = true;
-    }
-  });
-
-  if (!hasPath) {
-    context.restore();
     return;
   }
 
-  if (style.fill) {
-    context.fillStyle = style.fill;
-    context.fill("evenodd");
-  }
-
-  if (style.stroke) {
-    context.strokeStyle = style.stroke;
-    context.lineWidth = style.width ?? 1;
-    context.setLineDash(style.dash ?? []);
-    context.stroke();
-  }
-
-  context.restore();
+  bounds.minLng = Math.min(bounds.minLng, lng);
+  bounds.maxLng = Math.max(bounds.maxLng, lng);
+  bounds.minLat = Math.min(bounds.minLat, lat);
+  bounds.maxLat = Math.max(bounds.maxLat, lat);
 }
 
-function drawLineGeometry(
-  context: CanvasRenderingContext2D,
-  map: LeafletMap,
-  coordinates: number[][],
-  style: StrokeStyle
+function forEachPolygonCoordinates(
+  geometry: GeoJSON.Geometry,
+  callback: (rings: number[][][]) => void
 ) {
-  context.save();
-  context.beginPath();
-  const hasPath = traceLinePath(context, map, coordinates);
-  if (!hasPath) {
-    context.restore();
-    return;
-  }
-
-  context.strokeStyle = style.stroke;
-  context.lineWidth = style.width;
-  context.setLineDash(style.dash ?? []);
-  context.stroke();
-  context.restore();
-}
-
-function drawGeoFeature(
-  context: CanvasRenderingContext2D,
-  map: LeafletMap,
-  feature: GeoJSON.Feature,
-  polygonStyle: FillStrokeStyle,
-  lineStyle: StrokeStyle
-) {
-  const { geometry } = feature;
-
   if (geometry.type === "Polygon") {
-    drawPolygonGeometry(context, map, geometry.coordinates, polygonStyle);
+    callback(geometry.coordinates);
     return;
   }
 
   if (geometry.type === "MultiPolygon") {
-    geometry.coordinates.forEach((polygonCoordinates) => {
-      drawPolygonGeometry(context, map, polygonCoordinates, polygonStyle);
-    });
-    return;
+    geometry.coordinates.forEach((polygonCoordinates) => callback(polygonCoordinates));
   }
+}
 
+function forEachLineCoordinates(
+  geometry: GeoJSON.Geometry,
+  callback: (line: number[][]) => void
+) {
   if (geometry.type === "LineString") {
-    drawLineGeometry(context, map, geometry.coordinates, lineStyle);
+    callback(geometry.coordinates);
     return;
   }
 
   if (geometry.type === "MultiLineString") {
-    geometry.coordinates.forEach((lineCoordinates) => {
-      drawLineGeometry(context, map, lineCoordinates, lineStyle);
-    });
+    geometry.coordinates.forEach((lineCoordinates) => callback(lineCoordinates));
   }
 }
 
-function renderLeafletGeometryImage(input: ExportBlueprintReportInput): CapturedBlueprintImage | null {
-  if (!input.leafletMap) {
-    return null;
+function includeFeatureInBounds(bounds: LayoutBounds, feature: GeoJSON.Feature) {
+  const { geometry } = feature;
+
+  forEachPolygonCoordinates(geometry, (rings) => {
+    rings.forEach((ring) => {
+      ring.forEach((coordinate) => includeCoordinate(bounds, coordinate));
+    });
+  });
+
+  forEachLineCoordinates(geometry, (line) => {
+    line.forEach((coordinate) => includeCoordinate(bounds, coordinate));
+  });
+
+  if (geometry.type === "Point") {
+    includeCoordinate(bounds, geometry.coordinates);
   }
 
-  const map = input.leafletMap;
-  const mapSize = map.getSize();
-  const containerRect = input.mapContainer.getBoundingClientRect();
-  const width = Math.max(1, Math.round(mapSize.x || containerRect.width));
-  const height = Math.max(1, Math.round(mapSize.y || containerRect.height));
-  if (width <= 1 || height <= 1) {
-    return null;
+  if (geometry.type === "MultiPoint") {
+    geometry.coordinates.forEach((coordinate) => includeCoordinate(bounds, coordinate));
+  }
+}
+
+function hasFiniteBounds(bounds: LayoutBounds) {
+  return (
+    Number.isFinite(bounds.minLng) &&
+    Number.isFinite(bounds.maxLng) &&
+    Number.isFinite(bounds.minLat) &&
+    Number.isFinite(bounds.maxLat)
+  );
+}
+
+function normalizeBounds(bounds: LayoutBounds): LayoutBounds {
+  const normalized = { ...bounds };
+
+  if (normalized.maxLng - normalized.minLng < 1e-8) {
+    normalized.maxLng += 0.0002;
+    normalized.minLng -= 0.0002;
   }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return null;
+  if (normalized.maxLat - normalized.minLat < 1e-8) {
+    normalized.maxLat += 0.0002;
+    normalized.minLat -= 0.0002;
   }
 
-  drawBlueprintBackground(context, width, height, map.getZoom());
+  return normalized;
+}
+
+function collectLayoutBounds(input: ExportBlueprintReportInput): LayoutBounds | null {
+  const bounds = createBounds();
 
   if (input.panelLayoutContext.primaryRoof) {
-    drawGeoFeature(
-      context,
-      map,
-      input.panelLayoutContext.primaryRoof as GeoJSON.Feature,
-      {
-        fill: "rgba(34, 197, 94, 0.10)",
-        stroke: "rgba(187, 247, 208, 0.85)",
-        width: 1.4,
-      },
-      {
-        stroke: "rgba(187, 247, 208, 0.85)",
-        width: 1.4,
+    includeFeatureInBounds(bounds, input.panelLayoutContext.primaryRoof as GeoJSON.Feature);
+  }
+
+  input.roofElements.forEach((element) => includeFeatureInBounds(bounds, element.geoJSON));
+  input.panelLayoutContext.exclusionZones.forEach((zone) => includeFeatureInBounds(bounds, zone as GeoJSON.Feature));
+  input.placedPanels.forEach((panel) => includeFeatureInBounds(bounds, panel.feature as GeoJSON.Feature));
+  input.obstacleMarkers.forEach((marker) => includeCoordinate(bounds, [marker.position[1], marker.position[0]]));
+
+  if (!hasFiniteBounds(bounds)) {
+    return null;
+  }
+
+  return normalizeBounds(bounds);
+}
+
+function createLayoutProjector(
+  bounds: LayoutBounds,
+  targetX: number,
+  targetY: number,
+  targetWidth: number,
+  targetHeight: number,
+  padding: number
+) {
+  const usableWidth = Math.max(1, targetWidth - padding * 2);
+  const usableHeight = Math.max(1, targetHeight - padding * 2);
+  const spanLng = bounds.maxLng - bounds.minLng;
+  const spanLat = bounds.maxLat - bounds.minLat;
+  const scale = Math.min(usableWidth / spanLng, usableHeight / spanLat);
+  const offsetX = targetX + (targetWidth - spanLng * scale) / 2;
+  const offsetY = targetY + (targetHeight + spanLat * scale) / 2;
+
+  return (lng: number, lat: number): ScreenPoint => ({
+    x: offsetX + (lng - bounds.minLng) * scale,
+    y: offsetY - (lat - bounds.minLat) * scale,
+  });
+}
+
+function normalizeRing(ring: number[][]) {
+  if (ring.length < 2) {
+    return ring;
+  }
+
+  const [firstLng, firstLat] = ring[0];
+  const [lastLng, lastLat] = ring[ring.length - 1];
+  if (firstLng === lastLng && firstLat === lastLat) {
+    return ring.slice(0, ring.length - 1);
+  }
+
+  return ring;
+}
+
+function mapRingToPathData(ring: number[][], project: (lng: number, lat: number) => ScreenPoint) {
+  const normalized = normalizeRing(ring);
+  if (normalized.length < 3) {
+    return null;
+  }
+
+  const points = normalized.map(([lng, lat]) => project(lng, lat));
+  const start = points[0];
+  const segments = points.slice(1).map((point) => `L${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  return `M${start.x.toFixed(2)} ${start.y.toFixed(2)} ${segments} Z`;
+}
+
+function mapLineToPathData(line: number[][], project: (lng: number, lat: number) => ScreenPoint) {
+  if (line.length < 2) {
+    return null;
+  }
+
+  const points = line.map(([lng, lat]) => project(lng, lat));
+  const start = points[0];
+  const segments = points.slice(1).map((point) => `L${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  return `M${start.x.toFixed(2)} ${start.y.toFixed(2)} ${segments}`;
+}
+
+function buildLayoutVectorAsset(
+  input: ExportBlueprintReportInput,
+  width: number,
+  height: number
+): LayoutVectorAsset | null {
+  const bounds = collectLayoutBounds(input);
+  if (!bounds) {
+    return null;
+  }
+
+  const project = createLayoutProjector(bounds, 0, 0, width, height, 18);
+  const svgElements: string[] = [];
+
+  const pushFeature = (
+    feature: GeoJSON.Feature,
+    polygonStyle: FillStrokeStyle,
+    lineStyle: StrokeStyle
+  ) => {
+    forEachPolygonCoordinates(feature.geometry, (rings) => {
+      const ringPaths = rings
+        .map((ring) => mapRingToPathData(ring, project))
+        .filter((path): path is string => path !== null)
+        .join(" ");
+      if (!ringPaths) {
+        return;
       }
+
+      svgElements.push(
+        `<path d="${ringPaths}" fill="${polygonStyle.fill ?? "none"}" fill-opacity="0.65" stroke="${polygonStyle.stroke ?? "none"}" stroke-width="${(polygonStyle.width ?? 1).toFixed(2)}" ${polygonStyle.dash ? `stroke-dasharray="${polygonStyle.dash.join(" ")}"` : ""} fill-rule="evenodd" />`
+      );
+    });
+
+    forEachLineCoordinates(feature.geometry, (line) => {
+      const linePath = mapLineToPathData(line, project);
+      if (!linePath) {
+        return;
+      }
+
+      svgElements.push(
+        `<path d="${linePath}" fill="none" stroke="${lineStyle.stroke}" stroke-width="${lineStyle.width.toFixed(2)}" ${lineStyle.dash ? `stroke-dasharray="${lineStyle.dash.join(" ")}"` : ""} />`
+      );
+    });
+  };
+
+  if (input.panelLayoutContext.primaryRoof) {
+    pushFeature(
+      input.panelLayoutContext.primaryRoof as GeoJSON.Feature,
+      { fill: "#dcfce7", stroke: "#16a34a", width: 1.4 },
+      { stroke: "#16a34a", width: 1.4 }
     );
   }
 
   input.roofElements.forEach((element) => {
-    const roofStroke = element.source === "auto-detected" ? "rgba(34, 211, 238, 0.95)" : "rgba(241, 245, 249, 0.95)";
-    drawGeoFeature(
-      context,
-      map,
+    const stroke = element.source === "auto-detected" ? "#0891b2" : "#334155";
+    pushFeature(
       element.geoJSON,
       {
-        fill: element.geoJSON.geometry.type.includes("Polygon") ? "rgba(148, 163, 184, 0.10)" : undefined,
-        stroke: roofStroke,
-        width: element.geoJSON.geometry.type.includes("Line") ? 1.6 : 1.8,
+        fill: element.geoJSON.geometry.type.includes("Polygon") ? "#e2e8f0" : undefined,
+        stroke,
+        width: element.geoJSON.geometry.type.includes("Line") ? 1.2 : 1.4,
       },
       {
-        stroke: roofStroke,
-        width: 1.8,
-        dash: element.geoJSON.geometry.type.includes("Line") ? [5, 4] : undefined,
+        stroke,
+        width: element.geoJSON.geometry.type.includes("Line") ? 1.2 : 1.4,
+        dash: element.geoJSON.geometry.type.includes("Line") ? [6, 4] : undefined,
       }
     );
   });
 
   input.panelLayoutContext.exclusionZones.forEach((zone) => {
-    drawGeoFeature(
-      context,
-      map,
+    pushFeature(
       zone as GeoJSON.Feature,
-      {
-        fill: "rgba(245, 158, 11, 0.20)",
-        stroke: "rgba(252, 211, 77, 0.9)",
-        width: 1.4,
-        dash: [6, 4],
-      },
-      {
-        stroke: "rgba(252, 211, 77, 0.95)",
-        width: 1.4,
-        dash: [6, 4],
-      }
+      { fill: "#fef3c7", stroke: "#f59e0b", width: 1.2, dash: [7, 4] },
+      { stroke: "#f59e0b", width: 1.2, dash: [7, 4] }
     );
   });
 
   input.placedPanels.forEach((panel) => {
-    drawGeoFeature(
-      context,
-      map,
+    pushFeature(
       panel.feature as GeoJSON.Feature,
       {
-        fill: panel.source === "manual" ? "rgba(59, 130, 246, 0.72)" : "rgba(59, 130, 246, 0.58)",
-        stroke: "rgba(219, 234, 254, 0.95)",
-        width: 1,
+        fill: panel.source === "manual" ? "#1d4ed8" : "#2563eb",
+        stroke: "#bfdbfe",
+        width: 0.9,
+      },
+      { stroke: "#bfdbfe", width: 0.9 }
+    );
+  });
+
+  input.obstacleMarkers.forEach((marker) => {
+    const point = project(marker.position[1], marker.position[0]);
+    const fill = marker.source === "auto-detected" ? "#f97316" : "#eab308";
+    svgElements.push(
+      `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4.8" fill="${fill}" stroke="#ffffff" stroke-width="1.3" />`
+    );
+  });
+
+  const svgMarkup = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<g fill="none" stroke-linecap="round" stroke-linejoin="round">`,
+    ...svgElements,
+    `</g>`,
+    `</svg>`,
+  ].join("");
+
+  return {
+    svgMarkup,
+    width,
+    height,
+    bounds,
+  };
+}
+
+function drawPathOnPdf(
+  pdf: jsPDF,
+  points: ScreenPoint[],
+  options: {
+    strokeRgb: [number, number, number];
+    width: number;
+    dash?: number[];
+    closePath?: boolean;
+    fillRgb?: [number, number, number];
+  }
+) {
+  if (points.length < 2) {
+    return;
+  }
+
+  const vectors = points.slice(1).map((point, index) => {
+    const previous = points[index];
+    return [point.x - previous.x, point.y - previous.y];
+  });
+
+  const doc = pdf as any;
+  doc.setDrawColor(...options.strokeRgb);
+  doc.setLineWidth(options.width);
+  doc.setLineDashPattern(options.dash ?? [], 0);
+
+  if (options.fillRgb) {
+    doc.setFillColor(...options.fillRgb);
+  }
+
+  doc.lines(
+    vectors,
+    points[0].x,
+    points[0].y,
+    [1, 1],
+    options.fillRgb ? "FD" : "S",
+    options.closePath ?? false
+  );
+}
+
+function drawVectorLayoutInPdf(
+  pdf: jsPDF,
+  input: ExportBlueprintReportInput,
+  bounds: LayoutBounds,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const project = createLayoutProjector(bounds, x, y, width, height, 10);
+
+  const drawFeature = (
+    feature: GeoJSON.Feature,
+    polygonStyle: {
+      strokeRgb: [number, number, number];
+      width: number;
+      fillRgb?: [number, number, number];
+      dash?: number[];
+    },
+    lineStyle: {
+      strokeRgb: [number, number, number];
+      width: number;
+      dash?: number[];
+    }
+  ) => {
+    forEachPolygonCoordinates(feature.geometry, (rings) => {
+      rings.forEach((ring) => {
+        const normalized = normalizeRing(ring);
+        const points = normalized.map(([lng, lat]) => project(lng, lat));
+        drawPathOnPdf(pdf, points, {
+          strokeRgb: polygonStyle.strokeRgb,
+          width: polygonStyle.width,
+          fillRgb: polygonStyle.fillRgb,
+          dash: polygonStyle.dash,
+          closePath: true,
+        });
+      });
+    });
+
+    forEachLineCoordinates(feature.geometry, (line) => {
+      const points = line.map(([lng, lat]) => project(lng, lat));
+      drawPathOnPdf(pdf, points, {
+        strokeRgb: lineStyle.strokeRgb,
+        width: lineStyle.width,
+        dash: lineStyle.dash,
+      });
+    });
+  };
+
+  if (input.panelLayoutContext.primaryRoof) {
+    drawFeature(
+      input.panelLayoutContext.primaryRoof as GeoJSON.Feature,
+      { strokeRgb: [22, 163, 74], width: 1.2, fillRgb: [220, 252, 231] },
+      { strokeRgb: [22, 163, 74], width: 1.2 }
+    );
+  }
+
+  input.roofElements.forEach((element) => {
+    const strokeRgb: [number, number, number] = element.source === "auto-detected" ? [8, 145, 178] : [51, 65, 85];
+    drawFeature(
+      element.geoJSON,
+      {
+        strokeRgb,
+        width: element.geoJSON.geometry.type.includes("Line") ? 1 : 1.2,
+        fillRgb: element.geoJSON.geometry.type.includes("Polygon") ? [226, 232, 240] : undefined,
       },
       {
-        stroke: "rgba(219, 234, 254, 0.95)",
-        width: 1,
+        strokeRgb,
+        width: element.geoJSON.geometry.type.includes("Line") ? 1 : 1.2,
+        dash: element.geoJSON.geometry.type.includes("Line") ? [5, 3] : undefined,
+      }
+    );
+  });
+
+  input.panelLayoutContext.exclusionZones.forEach((zone) => {
+    drawFeature(
+      zone as GeoJSON.Feature,
+      { strokeRgb: [245, 158, 11], width: 1, fillRgb: [254, 243, 199], dash: [6, 3] },
+      { strokeRgb: [245, 158, 11], width: 1, dash: [6, 3] }
+    );
+  });
+
+  input.placedPanels.forEach((panel) => {
+    drawFeature(
+      panel.feature as GeoJSON.Feature,
+      {
+        strokeRgb: [191, 219, 254],
+        width: 0.8,
+        fillRgb: panel.source === "manual" ? [29, 78, 216] : [37, 99, 235],
+      },
+      {
+        strokeRgb: [191, 219, 254],
+        width: 0.8,
       }
     );
   });
 
   input.obstacleMarkers.forEach((marker) => {
-    const point = projectLngLat(map, [marker.position[1], marker.position[0]]);
-    if (!point) {
-      return;
-    }
-
-    context.save();
-    context.beginPath();
-    context.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
-    context.fillStyle = marker.source === "auto-detected" ? "rgba(249, 115, 22, 0.9)" : "rgba(250, 204, 21, 0.9)";
-    context.fill();
-    context.lineWidth = 1.6;
-    context.strokeStyle = "rgba(255, 255, 255, 0.92)";
-    context.stroke();
-    context.restore();
+    const point = project(marker.position[1], marker.position[0]);
+    const fillRgb: [number, number, number] = marker.source === "auto-detected" ? [249, 115, 22] : [234, 179, 8];
+    const doc = pdf as any;
+    doc.setDrawColor(255, 255, 255);
+    doc.setFillColor(...fillRgb);
+    doc.setLineWidth(1);
+    doc.circle(point.x, point.y, 3.5, "FD");
   });
-
-  return {
-    dataUrl: canvas.toDataURL("image/png"),
-    width,
-    height,
-  };
-}
-
-async function captureBlueprintImage(input: ExportBlueprintReportInput): Promise<CapturedBlueprintImage | null> {
-  const { mapContainer } = input;
-  await requestAnimationFrameAsync();
-  await requestAnimationFrameAsync();
-
-  // Prefer deterministic Leaflet geometry rendering for Blueprint exports.
-  const geometryImage = renderLeafletGeometryImage(input);
-  if (geometryImage) {
-    return geometryImage;
-  }
-
-  try {
-    const snapshot = await withTimeout(
-      captureMapSnapshot(mapContainer),
-      8_000,
-      "Blueprint snapshot timed out while preparing the PDF image."
-    );
-
-    return {
-      dataUrl: `data:image/png;base64,${snapshot.snapshotBase64}`,
-      width: snapshot.width,
-      height: snapshot.height,
-    };
-  } catch {
-    // Fallback to html2canvas when tile-based capture cannot compose the viewport.
-  }
-
-  try {
-    const canvas = await withTimeout(
-      html2canvas(mapContainer, {
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: "#07111f",
-        logging: false,
-        imageTimeout: 6_000,
-        scale: 1.1,
-      }),
-      8_000,
-      "Blueprint canvas capture timed out while preparing the PDF image."
-    );
-
-    return {
-      dataUrl: canvas.toDataURL("image/png"),
-      width: canvas.width,
-      height: canvas.height,
-    };
-  } catch {
-    return null;
-  }
 }
 
 function buildFeatureCollection(
@@ -803,6 +831,69 @@ function drawProjectionChart(
   pdf.text("Without solar", x + 109, legendY + 2);
 }
 
+function drawProjectionTable(
+  pdf: jsPDF,
+  data: SolarFinancialResults["financialProjection"],
+  x: number,
+  y: number,
+  width: number,
+  ensureSpace: (heightNeeded: number) => void
+) {
+  const rowHeight = 13;
+  const columnWidth = [58, 88, 88, 88, 88];
+  const headers = ["Year", "No Solar", "With Solar", "Production", "Grid Use"];
+  let cursorY = y;
+
+  const drawHeader = () => {
+    pdf.setFillColor(241, 245, 249);
+    pdf.rect(x, cursorY - 9, width, rowHeight + 4, "F");
+
+    let cursorX = x + 4;
+    headers.forEach((header, index) => {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(header, cursorX, cursorY);
+      cursorX += columnWidth[index];
+    });
+
+    cursorY += rowHeight;
+  };
+
+  ensureSpace(24);
+  drawHeader();
+
+  data.forEach((point, index) => {
+    ensureSpace(rowHeight + 4);
+
+    if (index % 2 === 1) {
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(x, cursorY - 9, width, rowHeight + 2, "F");
+    }
+
+    let cursorX = x + 4;
+    const rowValues = [
+      `${point.calendarYear}`,
+      formatCompactMoney(point.costWithoutSolar),
+      formatCompactMoney(point.costWithSolar),
+      `${formatNumber(point.yearlyProductionKwh, 0)} kWh`,
+      `${formatNumber(point.gridDependencyKwh, 0)} kWh`,
+    ];
+
+    rowValues.forEach((value, colIndex) => {
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      pdf.setTextColor(51, 65, 85);
+      pdf.text(value, cursorX, cursorY);
+      cursorX += columnWidth[colIndex];
+    });
+
+    cursorY += rowHeight;
+  });
+
+  return cursorY;
+}
+
 export async function exportBlueprintPitchReport(
   input: ExportBlueprintReportInput
 ): Promise<ExportBlueprintReportResult> {
@@ -818,7 +909,8 @@ export async function exportBlueprintPitchReport(
   const fileTimestamp = timestampForFile(now);
   const jsonFileName = `${filePrefix}-${fileTimestamp}-full-export.json`;
   const pdfFileName = `${filePrefix}-${fileTimestamp}-pitch-report.pdf`;
-  const image = await captureBlueprintImage(input);
+  const svgFileName = `${filePrefix}-${fileTimestamp}-layout-vector.svg`;
+  const layoutVector = buildLayoutVectorAsset(input, 1400, 900);
   const featureCollection = buildFeatureCollection(
     input.roofElements,
     input.obstacleMarkers,
@@ -829,6 +921,8 @@ export async function exportBlueprintPitchReport(
     const geometryType = element.geoJSON.geometry.type;
     return geometryType === "LineString" || geometryType === "MultiLineString" || element.type === "polyline";
   }).length;
+  const panelType = PANEL_TYPES[input.panelTypeId];
+  const panelSurfaceSqFt = input.placedPanels.length * panelType.widthM * panelType.heightM * 10.7639;
 
   const exportPayload = {
     metadata: {
@@ -838,12 +932,14 @@ export async function exportBlueprintPitchReport(
       address: trimmedAddress,
       coordinates: input.coordinates,
       exportVersion: "1.0",
+      vectorSvgAvailable: layoutVector !== null,
     },
     geometry: {
       roofElementCount: input.roofElements.length,
       lineGeometryCount,
       obstacleCount: input.obstacleMarkers.length,
       panelCount: input.placedPanels.length,
+      panelSurfaceSqFt: Number(panelSurfaceSqFt.toFixed(2)),
       exclusionZoneCount: input.panelLayoutContext.exclusionZones.length,
       featureCollection,
     },
@@ -869,6 +965,10 @@ export async function exportBlueprintPitchReport(
 
   if (input.downloadJson) {
     downloadBlob(new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" }), jsonFileName);
+  }
+
+  if (layoutVector) {
+    downloadBlob(new Blob([layoutVector.svgMarkup], { type: "image/svg+xml;charset=utf-8" }), svgFileName);
   }
 
   const { jsPDF: PdfConstructor } = await import("jspdf");
@@ -913,31 +1013,33 @@ export async function exportBlueprintPitchReport(
     cursorY += 14;
   }
 
-  if (image) {
-    const imageMaxHeight = 250;
-    const imageRatio = image.height > 0 ? image.width / image.height : 1;
-    let imageWidth = contentWidth;
-    let imageHeight = imageWidth / imageRatio;
-    if (imageHeight > imageMaxHeight) {
-      imageHeight = imageMaxHeight;
-      imageWidth = imageHeight * imageRatio;
-    }
+  ensureSpace(314);
+  drawSectionHeading(pdf, "Layout Plan (Vector)", PAGE_MARGIN, cursorY);
+  cursorY += 10;
+  const vectorBoxHeight = 286;
+  pdf.setDrawColor(203, 213, 225);
+  pdf.roundedRect(PAGE_MARGIN - 1, cursorY, contentWidth + 2, vectorBoxHeight, 6, 6, "S");
 
-    ensureSpace(imageHeight + 24);
-    pdf.setDrawColor(203, 213, 225);
-    pdf.roundedRect(PAGE_MARGIN - 2, cursorY - 2, imageWidth + 4, imageHeight + 4, 8, 8, "S");
-    pdf.addImage(image.dataUrl, "PNG", PAGE_MARGIN, cursorY, imageWidth, imageHeight, undefined, "FAST");
-    cursorY += imageHeight + 18;
+  if (layoutVector) {
+    drawVectorLayoutInPdf(
+      pdf,
+      input,
+      layoutVector.bounds,
+      PAGE_MARGIN + 6,
+      cursorY + 6,
+      contentWidth - 12,
+      vectorBoxHeight - 12
+    );
   } else {
-    ensureSpace(26);
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    pdf.setTextColor(148, 163, 184);
-    pdf.text("Blueprint image capture unavailable for this export run. Financial and geometry report included below.", PAGE_MARGIN, cursorY);
-    cursorY += 18;
+    pdf.setFontSize(10);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text("No drawable layout geometry found. Draw roof geometry, obstacles, or panels before exporting.", PAGE_MARGIN + 10, cursorY + 22);
   }
 
-  const narrative = `This blueprint proposes a ${input.plannerFinancials.activePanelCount}-panel ${PANEL_TYPES[input.panelTypeId].label.toLowerCase()} system sized at ${formatNumber(input.plannerFinancials.installationSizeKw, 2)} kW. It offsets about ${formatPercent(input.plannerFinancials.energyCoveredDisplayPercent, 1)} of annual demand, with projected 20-year savings of ${formatMoney(input.plannerFinancials.totalTwentyYearSavings)} and break-even ${input.plannerFinancials.breakEvenCalendarYear ?? "outside projection window"}.`;
+  cursorY += vectorBoxHeight + 16;
+
+  const narrative = `This proposal models a ${input.plannerFinancials.activePanelCount}-panel ${panelType.label.toLowerCase()} system sized at ${formatNumber(input.plannerFinancials.installationSizeKw, 2)} kW. The plan offsets about ${formatPercent(input.plannerFinancials.energyCoveredDisplayPercent, 1)} of annual demand, delivers estimated 20-year savings of ${formatMoney(input.plannerFinancials.totalTwentyYearSavings)}, and reaches break-even in ${input.plannerFinancials.breakEvenCalendarYear ?? "the post-20-year horizon"}.`;
   const narrativeLines = pdf.splitTextToSize(narrative, contentWidth);
   ensureSpace(narrativeLines.length * 12 + 10);
   pdf.setFont("helvetica", "normal");
@@ -964,6 +1066,48 @@ export async function exportBlueprintPitchReport(
 
   ensureSpace(170);
   cursorY += drawMetricGrid(pdf, PAGE_MARGIN, cursorY, contentWidth, geometrySummaryMetrics, 2);
+  cursorY += 8;
+
+  ensureSpace(22);
+  drawSectionHeading(pdf, "Design Engineering Detail", PAGE_MARGIN, cursorY);
+  cursorY += 14;
+
+  const designDetailMetrics: MetricItem[] = [
+    { label: "Panel model", value: panelType.label },
+    { label: "Panel dimensions", value: `${panelType.widthM}m x ${panelType.heightM}m` },
+    { label: "Per-panel capacity", value: `${input.plannerInputs.panelCapacityWatts} W` },
+    { label: "Total panel surface", value: `${formatNumber(panelSurfaceSqFt, 1)} sq ft` },
+    { label: "Layout mode", value: input.panelLayoutMode.toUpperCase() },
+    {
+      label: "Primary roof detected",
+      value: input.panelLayoutContext.primaryRoof ? "Yes" : "No",
+    },
+    {
+      label: "Blocked roof area",
+      value:
+        input.roofAreaSummary !== null
+          ? `${formatNumber(input.roofAreaSummary.blockedSqFt, 0)} sq ft`
+          : "Not calculated",
+    },
+    {
+      label: "Gross roof area",
+      value:
+        input.roofAreaSummary !== null
+          ? `${formatNumber(input.roofAreaSummary.grossSqFt, 0)} sq ft`
+          : "Not calculated",
+    },
+    {
+      label: "Solar best zone",
+      value: input.solarHeatmap ? input.solarHeatmap.bestZoneLabel : "Not available",
+    },
+    {
+      label: "Average solar exposure",
+      value: input.solarHeatmap ? `${input.solarHeatmap.averageExposurePercent}%` : "Not available",
+    },
+  ];
+
+  ensureSpace(220);
+  cursorY += drawMetricGrid(pdf, PAGE_MARGIN, cursorY, contentWidth, designDetailMetrics, 2);
   cursorY += 8;
 
   ensureSpace(22);
@@ -996,6 +1140,33 @@ export async function exportBlueprintPitchReport(
   cursorY += 10;
 
   ensureSpace(22);
+  drawSectionHeading(pdf, "Financial Model Assumptions", PAGE_MARGIN, cursorY);
+  cursorY += 14;
+
+  const assumptionsMetrics: MetricItem[] = [
+    { label: "Monthly consumption", value: `${formatNumber(input.plannerFinancials.monthlyUsageKwh, 1)} kWh` },
+    { label: "Annual consumption", value: `${formatNumber(input.plannerFinancials.annualConsumptionKwh, 0)} kWh` },
+    { label: "Target system size", value: `${formatNumber(input.plannerFinancials.targetSystemSizeKw, 2)} kW` },
+    { label: "Target panel count", value: `${input.plannerFinancials.targetPanelCount}` },
+    {
+      label: "Roof max panel count",
+      value:
+        input.plannerFinancials.roofMaxPanelCount === null
+          ? "Not constrained"
+          : `${input.plannerFinancials.roofMaxPanelCount}`,
+    },
+    { label: "Effective yield", value: `${formatNumber(input.plannerFinancials.effectiveYieldKwhPerKw, 1)} kWh/kW` },
+    { label: "Performance ratio", value: `${formatNumber(input.plannerFinancials.performanceRatioApplied, 3)}` },
+    { label: "Estimated shade loss", value: `${formatNumber(input.plannerFinancials.shadeLossPercent, 1)}%` },
+    { label: "Annual shortfall", value: `${formatNumber(input.plannerFinancials.annualShortfallKwh, 0)} kWh` },
+    { label: "Monthly shortfall", value: `${formatNumber(input.plannerFinancials.monthlyShortfallKwh, 0)} kWh` },
+  ];
+
+  ensureSpace(220);
+  cursorY += drawMetricGrid(pdf, PAGE_MARGIN, cursorY, contentWidth, assumptionsMetrics, 2);
+  cursorY += 8;
+
+  ensureSpace(22);
   drawSectionHeading(pdf, "20-Year Cost Projection", PAGE_MARGIN, cursorY);
   cursorY += 12;
 
@@ -1003,12 +1174,20 @@ export async function exportBlueprintPitchReport(
   drawProjectionChart(pdf, PAGE_MARGIN, cursorY, contentWidth, 180, input.plannerFinancials);
   cursorY += 190;
 
+  ensureSpace(24);
+  drawSectionHeading(pdf, "20-Year Projection Table", PAGE_MARGIN, cursorY);
+  cursorY += 13;
+  cursorY = drawProjectionTable(pdf, input.plannerFinancials.financialProjection, PAGE_MARGIN, cursorY, contentWidth, ensureSpace);
+  cursorY += 10;
+
   const packageSummaryLines = [
     "Export package includes:",
+    "- vector SVG layout auto-zoomed to maximum geometry coverage",
     "- full roof line geometry and polygons",
     "- obstacle markers and exclusion zones",
     "- roof layout panel polygons",
-    "- planner inputs, incentives, costs, break-even, and 20-year projection",
+    "- planner inputs, incentives, costs, break-even, and detailed 20-year cashflow table",
+    `SVG file: ${layoutVector ? svgFileName : "Not generated (no drawable geometry)"}`,
     `JSON file: ${jsonFileName}`,
   ];
   const wrappedPackageSummary = packageSummaryLines.flatMap((line) => pdf.splitTextToSize(line, contentWidth));
@@ -1024,5 +1203,6 @@ export async function exportBlueprintPitchReport(
   return {
     pdfFileName,
     jsonFileName,
+    svgFileName: layoutVector ? svgFileName : null,
   };
 }

@@ -542,12 +542,11 @@ export default function App() {
       mapRef.current?.invalidateSize();
       await delay(180);
 
-      const { pdfFileName } = await withTimeout(
+      const { pdfFileName, svgFileName } = await withTimeout(
         exportBlueprintPitchReport({
           address,
           coordinates,
           mapContainer: mapContainerRef.current,
-          leafletMap: mapRef.current,
           roofElements,
           obstacleMarkers,
           placedPanels,
@@ -566,7 +565,11 @@ export default function App() {
         "Export took too long. Try again after zoom settles, or switch to Blueprint View first."
       );
 
-      setPanelLayoutMessage(`Export complete: ${pdfFileName} downloaded.`);
+      setPanelLayoutMessage(
+        svgFileName
+          ? `Export complete: ${pdfFileName} and ${svgFileName} downloaded.`
+          : `Export complete: ${pdfFileName} downloaded.`
+      );
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error("Blueprint export failed.", error);
