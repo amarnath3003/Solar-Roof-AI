@@ -12,7 +12,7 @@ Get a visual tour of Solar Roof AI in action:
 
 | Workspace Overview | Detection & Planning | Financial Dashboard |
 |---|---|---|
-| ![Workspace](frontend/src/screenshots/solar%20ss.png) | ![Detection](frontend/src/screenshots/localhost_5173_(pc%201920).png) | ![Financial](frontend/src/screenshots/localhost_5173_(pc%201920)%20(2).png) |
+| ![Workspace](frontend/src/screenshots/localhost_5173_(pc%201920).png) | ![Blueprint](frontend/src/screenshots/localhost_5173_(pc%201920)%20(2).png) | ![PDF Report](frontend/src/screenshots/solar%20ss.png) |
 
 ---
 
