@@ -82,72 +82,77 @@ This is not just a detection demo. It's a complete product-style workflow that b
 
 ## 🎯 End-to-End User Flow
 
-1. Search for a property.
-2. Enter the map workspace and switch to imagery mode if needed.
-3. Draw roof and obstacles manually, or run auto-detection.
-4. Review detection results and accept only what looks correct.
-5. Calculate usable roof area and inspect solar heatmap hints.
-6. Simulate panel placement manually or with auto-pack.
-7. Review estimated system capacity and financial outcomes.
-8. Export geometry/report artifacts.
+1. 🔍 Search for a property
+2. 🗺️ Enter the map workspace and switch to imagery mode if needed
+3. 🏗️ Draw roof and obstacles manually, or run auto-detection
+4. ✅ Review detection results and accept only what looks correct
+5. 📊 Calculate usable roof area and inspect solar heatmap hints
+6. 📦 Simulate panel placement manually or with auto-pack
+7. 💵 Review estimated system capacity and financial outcomes
+8. 📤 Export geometry/report artifacts
 
-## Architecture
+## 🏗️ Architecture
 
 ### Frontend (Vite + React + TypeScript)
 
-- Interactive mapping and draw/edit UX.
-- Address search integration.
-- Detection workflow orchestration (snapshot -> API -> preview/apply).
-- Panel layout logic and worker offloading.
-- Solar heatmap visualization.
-- Financial dashboard components.
+- 🗺️ **Interactive mapping** and draw/edit UX
+- 🔎 **Address search** integration
+- 🤖 **Detection workflow** orchestration (snapshot → API → preview/apply)
+- ⚙️ **Panel layout** logic and worker offloading
+- ☀️ **Solar heatmap** visualization
+- 💰 **Financial dashboard** components
 
 ### Backend (FastAPI + OpenCV)
 
-- Detection API with request validation via Pydantic models.
-- Image decoding and quality scoring.
-- Roof candidate extraction using contour + morphology pipeline.
-- Obstacle candidate extraction and filtering.
-- Confidence scoring and truncation logic.
-- Metadata output including warning codes and estimated fields.
+- 📡 **Detection API** with request validation via Pydantic models
+- 🖼️ **Image decoding** and quality scoring
+- 🔍 **Roof candidate** extraction using contour + morphology pipeline
+- 🚫 **Obstacle candidate** extraction and filtering
+- 📈 **Confidence scoring** and truncation logic
+- 📋 **Metadata output** including warning codes and estimated fields
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Stack |
-| --- | --- |
-| Frontend | React 18, TypeScript, Vite, Leaflet, Turf.js, Recharts |
-| Backend | FastAPI, Pydantic v2, OpenCV, NumPy, Uvicorn |
-| External Data | OpenStreetMap Nominatim, ESRI World Imagery |
+|---|---|
+| **Frontend** | React 18, TypeScript, Vite, Leaflet, Turf.js, Recharts |
+| **Backend** | FastAPI, Pydantic v2, OpenCV, NumPy, Uvicorn |
+| **External Data** | OpenStreetMap Nominatim, ESRI World Imagery |
 
-## Monorepo Structure
+## 📂 Monorepo Structure
 
-```text
+```
 .
-├─ frontend/    # React + Vite app (map UI, planning workflow)
-├─ backend/     # FastAPI detection service
-├─ README.md
-└─ package.json # root workspace scripts
+├── frontend/        # React + Vite app (map UI, planning workflow)
+├── backend/         # FastAPI detection service
+├── README.md
+└── package.json     # root workspace scripts
 ```
 
-## API Summary
+## 🔌 API Summary
 
-- GET /health
-- POST /api/v1/roof/detect
+### Health Check
+```
+GET /health
+```
 
-### Detection request includes
+### Roof & Obstacle Detection
+```
+POST /api/v1/roof/detect
+```
 
+**Detection request includes:**
 - Map center and bounds
 - Base64 map snapshot
 - Snapshot dimensions and zoom
 - Detection thresholds and limits
 
-### Detection response includes
+**Detection response includes:**
+- `roof_planes[]` - Detected roof plane polygons
+- `obstacles[]` - Detected rooftop obstacles
+- `metadata` - Candidate counts, filtered counts, warnings, estimated metrics
 
-- roof_planes[]
-- obstacles[]
-- metadata (candidate counts, filtered counts, warnings, estimated metrics)
-
-## Local Development
+## 🚀 Local Development
 
 ### Prerequisites
 
