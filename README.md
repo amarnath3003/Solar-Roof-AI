@@ -156,58 +156,60 @@ POST /api/v1/roof/detect
 
 ### Prerequisites
 
-- Node.js 20+
-- Python 3.10+
+- **Node.js** 20+
+- **Python** 3.10+
 
-### Install
+### Quick Start
 
+**Install dependencies:**
 ```bash
 npm install --workspace frontend
 npm run backend:install
 python -m pip install -r backend/requirements-dev.txt
 ```
 
-### Run both apps
-
+**Run both apps:**
 ```bash
 npm run frontend:dev
 npm run backend:dev
 ```
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8000
-- API docs: http://localhost:8000/docs
+**Services:**
+- 🌐 **Frontend:** http://localhost:5173
+- 🔧 **Backend:** http://localhost:8000
+- 📚 **API Docs:** http://localhost:8000/docs
 
-### Test backend
-
+**Test backend:**
 ```bash
 cd backend
 python -m pytest
 ```
 
-## Workspace Scripts (Root)
+## 📋 Workspace Scripts (Root)
 
-- npm run dev -> starts frontend dev server
-- npm run build -> builds frontend
-- npm run preview -> previews frontend build
-- npm run frontend:dev -> explicit frontend dev command
-- npm run backend:install -> installs backend runtime deps
-- npm run backend:dev -> starts FastAPI with reload
+| Command | Action |
+|---|---|
+| `npm run dev` | Start frontend dev server |
+| `npm run build` | Build frontend for production |
+| `npm run preview` | Preview frontend build |
+| `npm run frontend:dev` | Explicit frontend dev command |
+| `npm run backend:install` | Install backend runtime dependencies |
+| `npm run backend:dev` | Start FastAPI with auto-reload |
 
-## Limitations and Assumptions
+## ⚠️ Limitations and Assumptions
 
-- Detection quality depends on imagery quality, zoom, and roof contrast.
-- Pitch/aspect/height values are estimation-grade from 2D imagery.
-- Results are suitable for planning and pre-sales exploration, not permit-ready engineering.
-- Manual edits remain essential for edge cases and complex roof geometries.
+- 🖼️ Detection quality depends on imagery quality, zoom, and roof contrast
+- 📐 Pitch/aspect/height values are estimation-grade from 2D imagery
+- 🎯 Results are suitable for planning and pre-sales exploration, not permit-ready engineering
+- ✏️ Manual edits remain essential for edge cases and complex roof geometries
 
-## Future Improvements
+## 🔮 Future Improvements
 
-- Stronger model-based detection beyond classical CV heuristics.
-- More explicit setback and code-rule constraints for panel placement.
-- Time-series irradiance simulation and seasonal production profiles.
-- Authentication, saved projects, and collaboration workflows.
+- 🧠 Stronger model-based detection beyond classical CV heuristics
+- 📏 More explicit setback and code-rule constraints for panel placement
+- 📈 Time-series irradiance simulation and seasonal production profiles
+- 🔐 Authentication, saved projects, and collaboration workflows
 
-## License
+## 📄 License
 
 No license file is currently included in this repository. Add a LICENSE file before production or commercial distribution.
