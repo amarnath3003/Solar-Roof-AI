@@ -272,15 +272,15 @@ function WorkspaceDataPanel({
               <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Detection confidence</div>
-                  <div className="text-xs text-zinc-200">{Math.round(detectionConfidenceThreshold * 100)}%</div>
+                  <div className="text-xs text-zinc-200">{detectionConfidenceThreshold.toFixed(2)}</div>
                 </div>
                 <input
                   type="range"
-                  min={30}
-                  max={90}
-                  step={5}
-                  value={Math.round(detectionConfidenceThreshold * 100)}
-                  onChange={(event) => onDetectionConfidenceThresholdChange(Number(event.target.value) / 100)}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={detectionConfidenceThreshold}
+                  onChange={(event) => onDetectionConfidenceThresholdChange(Number(event.target.value))}
                   className="mt-3 w-full accent-cyan-400"
                 />
               </div>
