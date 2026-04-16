@@ -39,6 +39,7 @@ const ROBOFLOW_API_URL = import.meta.env.VITE_ROBOFLOW_API_URL;
 const ROBOFLOW_WORKSPACE = import.meta.env.VITE_ROBOFLOW_WORKSPACE;
 const ROBOFLOW_WORKFLOW_ID = import.meta.env.VITE_ROBOFLOW_WORKFLOW_ID;
 const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY;
+const ROBOFLOW_DEV_PROXY_PREFIX = "/roboflow-proxy";
 
 function getMinRoofAreaPx(request: AutoRoofDetectionRequest): number {
   return Math.max(50, request.minRoofAreaPx ?? 500);
@@ -376,7 +377,9 @@ function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoo
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof TypeError) {
-    return "Cannot reach Roboflow hosted workflow. Check network, API URL, and CORS access.";
+    return import.meta.env.DEV
+      ? "Cannot reach Roboflow workflow. Restart the dev server and verify Vite proxy is active."
+      : "Cannot reach Roboflow hosted workflow. Check network, API URL, and CORS access.";
   }
 
   if (error instanceof Error) {
@@ -395,17 +398,24 @@ export function useAutoRoofDetection() {
     setError(null);
 
     try {
-      if (!ROBOFLOW_API_URL || !ROBOFLOW_WORKSPACE || !ROBOFLOW_WORKFLOW_ID) {
+      if (!ROBOFLOW_WORKSPACE || !ROBOFLOW_WORKFLOW_ID) {
         throw new Error(
-          "Roboflow config missing. Set VITE_ROBOFLOW_API_URL, VITE_ROBOFLOW_WORKSPACE, and VITE_ROBOFLOW_WORKFLOW_ID."
+          "Roboflow config missing. Set VITE_ROBOFLOW_WORKSPACE and VITE_ROBOFLOW_WORKFLOW_ID."
         );
+      }
+
+      if (!import.meta.env.DEV && !ROBOFLOW_API_URL) {
+        throw new Error("Roboflow API URL missing. Set VITE_ROBOFLOW_API_URL.");
       }
 
       if (!ROBOFLOW_API_KEY) {
         throw new Error("Roboflow key missing. Set VITE_ROBOFLOW_API_KEY.");
       }
 
-      const endpoint = `${ROBOFLOW_API_URL.replace(/\/$/, "")}/${ROBOFLOW_WORKSPACE}/workflows/${ROBOFLOW_WORKFLOW_ID}`;
+      const endpointBase = import.meta.env.DEV
+        ? ROBOFLOW_DEV_PROXY_PREFIX
+        : (ROBOFLOW_API_URL as string).replace(/\/$/, "");
+      const endpoint = `${endpointBase}/${ROBOFLOW_WORKSPACE}/workflows/${ROBOFLOW_WORKFLOW_ID}`;
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
