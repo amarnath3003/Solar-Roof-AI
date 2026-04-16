@@ -21,6 +21,16 @@ type RoboflowWorkflowFrame = {
 
 type RoboflowWorkflowResponse = RoboflowWorkflowFrame[] | RoboflowWorkflowFrame;
 
+type RoboflowJsonPolygon = {
+  points?: unknown;
+  confidence?: unknown;
+  label?: unknown;
+};
+
+type RoboflowJsonOutput = {
+  polygons?: RoboflowJsonPolygon[];
+};
+
 type RoboflowError = {
   error?: string;
   message?: string;
@@ -250,6 +260,14 @@ function parseNumber(value: unknown): number | null {
   return null;
 }
 
+function parsePointPair(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const x = parseNumber(value[0]);
+  const y = parseNumber(value[1]);
+  if (x == null || y == null) return null;
+  return [x, y];
+}
+
 function pointsFromUnknown(value: unknown): Array<[number, number]> {
   if (!Array.isArray(value)) return [];
 
@@ -388,6 +406,59 @@ function getFramePredictions(frame: RoboflowWorkflowFrame): RoboflowPredictions 
   return frame.outputs?.[0]?.predictions;
 }
 
+function parseRoboflowJsonOutput(jsonOutput: unknown): SvgShapeCandidate[] {
+  let parsedOutput: unknown = jsonOutput;
+
+  if (typeof parsedOutput === "string") {
+    const trimmed = parsedOutput.trim();
+    if (!trimmed) return [];
+    try {
+      parsedOutput = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!parsedOutput || typeof parsedOutput !== "object") {
+    return [];
+  }
+
+  const output = parsedOutput as RoboflowJsonOutput;
+  if (!Array.isArray(output.polygons)) {
+    return [];
+  }
+
+  const candidates: SvgShapeCandidate[] = [];
+  for (const polygon of output.polygons) {
+    if (!polygon || typeof polygon !== "object") continue;
+
+    const pointsRaw = (polygon as RoboflowJsonPolygon).points;
+    if (!Array.isArray(pointsRaw)) continue;
+
+    const points = pointsRaw
+      .map((point) => parsePointPair(point))
+      .filter((point): point is [number, number] => point !== null);
+
+    if (points.length < 3) continue;
+
+    const areaPx = polygonArea(points);
+    if (areaPx <= 0) continue;
+
+    const confidence = parseNumber((polygon as RoboflowJsonPolygon).confidence);
+    const rawLabel = (polygon as RoboflowJsonPolygon).label;
+    const label = typeof rawLabel === "string" ? rawLabel.toLowerCase() : "roof";
+
+    candidates.push({
+      points,
+      areaPx,
+      confidence,
+      label,
+    });
+  }
+
+  return candidates;
+}
+
 function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoofDetectionRequest): AutoRoofDetectionResult {
   const started = performance.now();
   const frame = normalizeRoboflowFrame(payload);
@@ -395,10 +466,10 @@ function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoo
     throw new Error("Roboflow response was empty.");
   }
 
+  const jsonCandidates = parseRoboflowJsonOutput(getFrameJsonOutput(frame));
   const svgMarkup = getFrameSvgMarkup(frame);
   const svgCandidates = svgMarkup ? parseSvgShapeCandidates(svgMarkup) : [];
-  const jsonCandidates = parseJsonShapeCandidates(getFrameJsonOutput(frame));
-  const candidates = svgCandidates.length > 0 ? svgCandidates : jsonCandidates;
+  const candidates = jsonCandidates.length > 0 ? jsonCandidates : svgCandidates;
   const hasGeometryCandidates = candidates.length > 0;
   const minRoofAreaPx = getMinRoofAreaPx(request);
   const minObstacleAreaPx = getMinObstacleAreaPx(request);
