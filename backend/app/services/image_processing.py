@@ -1,11 +1,21 @@
 import base64
 import math
+import os
+import re
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass
+from typing import Any
+from xml.etree import ElementTree
 
 import cv2
 import numpy as np
+
+try:
+    from inference_sdk import InferenceHTTPClient
+except Exception:  # pragma: no cover - optional dependency in local dev before install
+    InferenceHTTPClient = None  # type: ignore[assignment]
 
 from app.schemas.detection import (
     DetectionMetadata,
@@ -37,6 +47,25 @@ class RoofCandidate:
     centroid: tuple[float, float]
 
 
+@dataclass
+class RoboflowSettings:
+    api_url: str
+    api_key: str
+    workspace_name: str
+    workflow_id: str
+    use_cache: bool
+
+
+@dataclass
+class SvgShapeCandidate:
+    points: list[tuple[float, float]]
+    area_px: float
+    centroid: tuple[float, float] | None
+    bbox: tuple[int, int, int, int]
+    confidence: float | None
+    label: str
+
+
 def _decode_image(snapshot_base64: str) -> np.ndarray:
     payload = snapshot_base64
     if "," in payload:
@@ -51,6 +80,28 @@ def _decode_image(snapshot_base64: str) -> np.ndarray:
     if image is None:
         raise ValueError("Unable to decode snapshot image")
     return image
+
+
+def _parse_env_bool(env_var: str, default: bool) -> bool:
+    raw_value = os.getenv(env_var)
+    if raw_value is None:
+        return default
+
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _load_roboflow_settings() -> RoboflowSettings | None:
+    api_key = os.getenv("ROBOFLOW_API_KEY")
+    if not api_key:
+        return None
+
+    return RoboflowSettings(
+        api_url=os.getenv("ROBOFLOW_API_URL", "https://serverless.roboflow.com"),
+        api_key=api_key,
+        workspace_name=os.getenv("ROBOFLOW_WORKSPACE", "rooflayout"),
+        workflow_id=os.getenv("ROBOFLOW_WORKFLOW_ID", "detect-count-and-visualize"),
+        use_cache=_parse_env_bool("ROBOFLOW_USE_CACHE", default=True),
+    )
 
 
 def _pixel_to_geo(point: tuple[float, float], ctx: PixelToGeoContext) -> list[float]:
@@ -210,19 +261,412 @@ def _center_prior(centroid: tuple[float, float], width: int, height: int) -> flo
     return float(math.exp(-((norm_dist * norm_dist) / (2.0 * sigma * sigma))))
 
 
-def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
-    started = time.perf_counter()
+def _parse_optional_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
-    image = _decode_image(req.snapshot_base64)
-    source_height, source_width = image.shape[:2]
 
-    warning_codes: list[str] = []
-    warnings: list[str] = []
+def _polygon_area(points: list[tuple[float, float]]) -> float:
+    if len(points) < 3:
+        return 0.0
 
-    if source_width != req.width or source_height != req.height:
-        warning_codes.append("INPUT_DIMENSION_MISMATCH")
-        warnings.append("Input width/height differs from decoded snapshot size; decoded dimensions were used.")
+    area = 0.0
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        area += (x1 * y2) - (x2 * y1)
 
+    return abs(area) / 2.0
+
+
+def _polygon_centroid(points: list[tuple[float, float]]) -> tuple[float, float] | None:
+    if len(points) < 3:
+        return None
+
+    area_factor = 0.0
+    centroid_x = 0.0
+    centroid_y = 0.0
+
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        cross = (x1 * y2) - (x2 * y1)
+        area_factor += cross
+        centroid_x += (x1 + x2) * cross
+        centroid_y += (y1 + y2) * cross
+
+    if abs(area_factor) < 1e-9:
+        return None
+
+    area_factor *= 0.5
+    centroid_x /= 6.0 * area_factor
+    centroid_y /= 6.0 * area_factor
+    return float(centroid_x), float(centroid_y)
+
+
+def _bbox_from_points(points: list[tuple[float, float]]) -> tuple[int, int, int, int]:
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x = int(math.floor(min(xs)))
+    min_y = int(math.floor(min(ys)))
+    max_x = int(math.ceil(max(xs)))
+    max_y = int(math.ceil(max(ys)))
+    return min_x, min_y, max(0, max_x - min_x), max(0, max_y - min_y)
+
+
+def _estimate_aspect_from_points(points: list[tuple[float, float]]) -> float:
+    if len(points) < 2:
+        return 0.0
+
+    longest_segment = 0.0
+    segment_angle = 0.0
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        length = math.hypot(x2 - x1, y2 - y1)
+        if length <= longest_segment:
+            continue
+
+        longest_segment = length
+        # Convert image-space angle to a compass-like heading in [0, 360).
+        segment_angle = (math.degrees(math.atan2(-(y2 - y1), x2 - x1)) + 360.0) % 360.0
+
+    return float(round(segment_angle, 2))
+
+
+def _parse_svg_points(value: str) -> list[tuple[float, float]]:
+    numbers = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", value)
+    if len(numbers) < 6:
+        return []
+
+    points: list[tuple[float, float]] = []
+    for index in range(0, len(numbers) - 1, 2):
+        points.append((float(numbers[index]), float(numbers[index + 1])))
+
+    return points
+
+
+def _svg_local_tag_name(tag_name: str) -> str:
+    if "}" in tag_name:
+        return tag_name.split("}", 1)[1].lower()
+    return tag_name.lower()
+
+
+def _extract_svg_markup(result: Any) -> str | None:
+    if isinstance(result, str):
+        return result if "<svg" in result.lower() else None
+
+    if isinstance(result, dict):
+        for key in ("svg", "output_svg", "visualization_svg", "result_svg"):
+            candidate = result.get(key)
+            if isinstance(candidate, str) and "<svg" in candidate.lower():
+                return candidate
+
+        for value in result.values():
+            found = _extract_svg_markup(value)
+            if found is not None:
+                return found
+        return None
+
+    if isinstance(result, list):
+        for item in result:
+            found = _extract_svg_markup(item)
+            if found is not None:
+                return found
+
+    return None
+
+
+def _parse_svg_shape_candidates(svg_markup: str) -> list[SvgShapeCandidate]:
+    try:
+        root = ElementTree.fromstring(svg_markup)
+    except ElementTree.ParseError as exc:
+        raise ValueError("Roboflow workflow returned invalid SVG output") from exc
+
+    candidates: list[SvgShapeCandidate] = []
+
+    for element in root.iter():
+        tag_name = _svg_local_tag_name(element.tag)
+        points: list[tuple[float, float]] = []
+
+        if tag_name in {"polygon", "polyline"}:
+            points = _parse_svg_points(element.attrib.get("points", ""))
+        elif tag_name == "rect":
+            x = _parse_optional_float(element.attrib.get("x")) or 0.0
+            y = _parse_optional_float(element.attrib.get("y")) or 0.0
+            width = _parse_optional_float(element.attrib.get("width")) or 0.0
+            height = _parse_optional_float(element.attrib.get("height")) or 0.0
+            if width > 0.0 and height > 0.0:
+                points = [
+                    (x, y),
+                    (x + width, y),
+                    (x + width, y + height),
+                    (x, y + height),
+                ]
+        elif tag_name == "path":
+            path_data = element.attrib.get("d", "")
+            points = _parse_svg_points(path_data)
+
+        if len(points) < 3:
+            continue
+
+        area_px = _polygon_area(points)
+        if area_px <= 0.0:
+            continue
+
+        bbox = _bbox_from_points(points)
+        if bbox[2] <= 0 or bbox[3] <= 0:
+            continue
+
+        label_parts = [
+            element.attrib.get("class", ""),
+            element.attrib.get("id", ""),
+            element.attrib.get("label", ""),
+            element.attrib.get("data-label", ""),
+            element.attrib.get("name", ""),
+        ]
+        label = " ".join(part for part in label_parts if part).strip().lower()
+
+        confidence = None
+        for attribute_key in ("confidence", "score", "probability", "data-confidence", "data-score"):
+            confidence = _parse_optional_float(element.attrib.get(attribute_key))
+            if confidence is not None:
+                break
+
+        candidates.append(
+            SvgShapeCandidate(
+                points=points,
+                area_px=area_px,
+                centroid=_polygon_centroid(points),
+                bbox=bbox,
+                confidence=confidence,
+                label=label,
+            )
+        )
+
+    return candidates
+
+
+def _run_roboflow_workflow(image: np.ndarray, settings: RoboflowSettings) -> Any:
+    if InferenceHTTPClient is None:
+        raise RuntimeError("inference-sdk is not installed")
+
+    temp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+            temp_path = temp_file.name
+
+        if not cv2.imwrite(temp_path, image):
+            raise RuntimeError("Unable to persist snapshot to a temporary file")
+
+        client = InferenceHTTPClient(api_url=settings.api_url, api_key=settings.api_key)
+        return client.run_workflow(
+            workspace_name=settings.workspace_name,
+            workflow_id=settings.workflow_id,
+            images={"image": temp_path},
+            use_cache=settings.use_cache,
+        )
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def _analyze_snapshot_roboflow(
+    req: DetectionRequest,
+    image: np.ndarray,
+    source_width: int,
+    source_height: int,
+    started: float,
+    warning_codes: list[str],
+    warnings: list[str],
+    settings: RoboflowSettings,
+) -> DetectionResponse:
+    gray = _prepare_grayscale(image)
+    image_quality = _image_quality_score(gray)
+
+    workflow_result = _run_roboflow_workflow(image, settings)
+    svg_markup = _extract_svg_markup(workflow_result)
+    if not svg_markup:
+        raise ValueError("Roboflow workflow response does not contain an SVG payload")
+
+    shape_candidates = _parse_svg_shape_candidates(svg_markup)
+    ctx = PixelToGeoContext(
+        width=source_width,
+        height=source_height,
+        west=req.bounds.west,
+        south=req.bounds.south,
+        east=req.bounds.east,
+        north=req.bounds.north,
+    )
+    image_area = float(source_width * source_height)
+
+    roof_raw: list[tuple[RoofPlane, tuple[int, int, int, int], float, tuple[float, float]]] = []
+    obstacle_raw: list[tuple[Obstacle, float]] = []
+    roof_candidate_count = 0
+    obstacle_candidate_count = 0
+
+    for candidate in shape_candidates:
+        label = candidate.label
+        is_obstacle_labeled = any(keyword in label for keyword in ("obstacle", "chimney", "vent", "hvac"))
+        is_roof_labeled = any(keyword in label for keyword in ("roof", "plane", "surface"))
+
+        inferred_as_obstacle = is_obstacle_labeled or (
+            not is_roof_labeled and candidate.area_px <= (req.min_roof_area_px * 0.40)
+        )
+
+        if inferred_as_obstacle:
+            obstacle_candidate_count += 1
+            centroid = candidate.centroid
+            if centroid is None:
+                continue
+
+            if candidate.area_px < req.min_obstacle_area_px:
+                continue
+
+            if candidate.area_px > (req.min_roof_area_px * 0.55):
+                continue
+
+            center_prior = _center_prior(centroid, source_width, source_height)
+            confidence_seed = candidate.confidence if candidate.confidence is not None else 0.62
+            confidence = max(0.0, min(1.0, (confidence_seed * 0.7) + (center_prior * 0.3)))
+            if confidence < req.obstacle_confidence_threshold:
+                continue
+
+            location = _pixel_to_geo(centroid, ctx)
+            estimated_height = max(0.3, min(4.5, (math.sqrt(candidate.area_px) / 9.0)))
+            obstacle_raw.append(
+                (
+                    Obstacle(
+                        id=f"obstacle_{uuid.uuid4().hex[:8]}",
+                        confidence=round(confidence, 3),
+                        obstacle_type="rooftop-obstacle",
+                        estimated_height_m=round(estimated_height, 2),
+                        geometry=PointGeometry(coordinates=location),
+                    ),
+                    confidence,
+                )
+            )
+            continue
+
+        roof_candidate_count += 1
+        if candidate.area_px < req.min_roof_area_px:
+            continue
+
+        centroid = candidate.centroid
+        if centroid is None:
+            continue
+
+        center_prior = _center_prior(centroid, source_width, source_height)
+        if center_prior < 0.08:
+            continue
+
+        bbox = candidate.bbox
+        if bbox[2] <= 0 or bbox[3] <= 0:
+            continue
+
+        aspect_ratio = max(float(bbox[2]) / float(max(bbox[3], 1)), float(bbox[3]) / float(max(bbox[2], 1)))
+        if aspect_ratio > 10.0:
+            continue
+
+        confidence_seed = candidate.confidence if candidate.confidence is not None else 0.78
+        confidence = max(0.0, min(1.0, (confidence_seed * 0.72) + (center_prior * 0.28)))
+        if confidence < req.roof_confidence_threshold:
+            continue
+
+        ring = [_pixel_to_geo(point, ctx) for point in candidate.points]
+        if len(ring) < 4:
+            continue
+        ring.append(ring[0])
+
+        pitch_degrees = float(round(8.0 + ((1.0 - center_prior) * 10.0), 2))
+        aspect_degrees = _estimate_aspect_from_points(candidate.points)
+        ranking_score = confidence + (0.22 * center_prior) + (0.10 * min(candidate.area_px / max(image_area, 1.0), 1.0))
+
+        roof_raw.append(
+            (
+                RoofPlane(
+                    id=f"roof_{uuid.uuid4().hex[:8]}",
+                    confidence=round(confidence, 3),
+                    estimated_pitch_degrees=pitch_degrees,
+                    aspect_degrees=aspect_degrees,
+                    area_sq_m=round(_area_px_to_sq_m(candidate.area_px, req, source_width, source_height), 2),
+                    geometry=PolygonGeometry(coordinates=[ring]),
+                ),
+                bbox,
+                ranking_score,
+                centroid,
+            )
+        )
+
+    roof_raw.sort(key=lambda item: item[2], reverse=True)
+    selected_bboxes: list[tuple[int, int, int, int]] = []
+    roof_planes: list[RoofPlane] = []
+    for plane, bbox, _, _ in roof_raw:
+        is_duplicate = any(_bbox_iou(bbox, existing_bbox) > 0.60 for existing_bbox in selected_bboxes)
+        if is_duplicate:
+            continue
+
+        selected_bboxes.append(bbox)
+        roof_planes.append(plane)
+        if len(roof_planes) >= req.max_roof_planes:
+            break
+
+    obstacle_raw.sort(key=lambda item: item[1], reverse=True)
+    obstacles = [obstacle for obstacle, _ in obstacle_raw[: req.max_obstacles]]
+
+    if roof_candidate_count > req.max_roof_planes:
+        warning_codes.append("TRUNCATED_ROOF_PLANES")
+        warnings.append("Roof detections were truncated by max_roof_planes.")
+
+    if obstacle_candidate_count > req.max_obstacles:
+        warning_codes.append("TRUNCATED_OBSTACLES")
+        warnings.append("Obstacle detections were truncated by max_obstacles.")
+
+    if roof_candidate_count > 0 and not roof_planes:
+        warning_codes.append("FILTERED_ROOF_CANDIDATES")
+        warnings.append("Roof candidates were detected but filtered by quality thresholds.")
+
+    if obstacle_candidate_count > 0 and not obstacles:
+        warning_codes.append("FILTERED_OBSTACLE_CANDIDATES")
+        warnings.append("Obstacle candidates were detected but filtered by quality thresholds.")
+
+    if not roof_planes:
+        warning_codes.append("NO_ROOF_PLANES")
+        warnings.append("No high-confidence roof planes found. Try a clearer satellite zoom level.")
+
+    if image_quality < 0.2:
+        warning_codes.append("LOW_IMAGE_QUALITY")
+        warnings.append("Low image quality detected; roof edges may be incomplete.")
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    metadata = DetectionMetadata(
+        processing_ms=elapsed_ms,
+        roof_candidates=roof_candidate_count,
+        obstacle_candidates=obstacle_candidate_count,
+        filtered_roof_planes=len(roof_planes),
+        filtered_obstacles=len(obstacles),
+        model=f"roboflow-workflow:{settings.workspace_name}/{settings.workflow_id}",
+        image_quality=image_quality,
+        input_width=source_width,
+        input_height=source_height,
+        warning_codes=warning_codes,
+        warnings=warnings,
+        estimated_metrics=["estimated_pitch_degrees", "aspect_degrees", "estimated_height_m"],
+    )
+
+    return DetectionResponse(roof_planes=roof_planes, obstacles=obstacles, metadata=metadata)
+
+
+def _analyze_snapshot_opencv(
+    req: DetectionRequest,
+    image: np.ndarray,
+    source_width: int,
+    source_height: int,
+    started: float,
+    warning_codes: list[str],
+    warnings: list[str],
+) -> DetectionResponse:
     gray = _prepare_grayscale(image)
     roof_candidate_mask, edge_map = _roof_mask(gray)
     obstacle_candidate_mask = _obstacle_mask(gray)
@@ -471,3 +915,44 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
     )
 
     return DetectionResponse(roof_planes=roof_planes, obstacles=obstacles, metadata=metadata)
+
+
+def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
+    started = time.perf_counter()
+
+    image = _decode_image(req.snapshot_base64)
+    source_height, source_width = image.shape[:2]
+
+    warning_codes: list[str] = []
+    warnings: list[str] = []
+
+    if source_width != req.width or source_height != req.height:
+        warning_codes.append("INPUT_DIMENSION_MISMATCH")
+        warnings.append("Input width/height differs from decoded snapshot size; decoded dimensions were used.")
+
+    roboflow_settings = _load_roboflow_settings()
+    if roboflow_settings is not None:
+        try:
+            return _analyze_snapshot_roboflow(
+                req=req,
+                image=image,
+                source_width=source_width,
+                source_height=source_height,
+                started=started,
+                warning_codes=warning_codes,
+                warnings=warnings,
+                settings=roboflow_settings,
+            )
+        except Exception:
+            warning_codes.append("ROBOFLOW_FALLBACK")
+            warnings.append("Roboflow workflow failed; fallback OpenCV pipeline was used.")
+
+    return _analyze_snapshot_opencv(
+        req=req,
+        image=image,
+        source_width=source_width,
+        source_height=source_height,
+        started=started,
+        warning_codes=warning_codes,
+        warnings=warnings,
+    )

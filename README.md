@@ -2,7 +2,7 @@
 
 > An interactive solar planning workspace for rooftop mapping, AI-assisted roof detection, panel layout simulation, and financial estimation.
 
-Solar Roof AI combines a **React + TypeScript** geospatial frontend with a **FastAPI + OpenCV** backend. It is designed to feel like a lightweight solar pre-sales planning product: users can search a property, draw or detect roof geometry, analyze usable area and exposure, simulate panel placement, and export results.
+Solar Roof AI is currently running as a **frontend-only React + TypeScript** geospatial workspace with **direct Roboflow hosted workflow** integration for auto-detection. It is designed to feel like a lightweight solar pre-sales planning product: users can search a property, draw or detect roof geometry, analyze usable area and exposure, simulate panel placement, and export results.
 
 ---
 
@@ -44,7 +44,7 @@ This is not just a detection demo. It's a complete product-style workflow that b
 ### 3️⃣ AI-Assisted Roof Detection
 
 - **Capture map snapshots** from the frontend
-- **Send to FastAPI detection** endpoint for analysis
+- **Send directly to Roboflow hosted workflow** for analysis
 - **Detect roof planes and obstacles** from imagery
 - **Preview before applying** detections to workspace
 - **Tune confidence thresholds** and area filters for precision
@@ -97,26 +97,23 @@ This is not just a detection demo. It's a complete product-style workflow that b
 
 - 🗺️ **Interactive mapping** and draw/edit UX
 - 🔎 **Address search** integration
-- 🤖 **Detection workflow** orchestration (snapshot → API → preview/apply)
+- 🤖 **Detection workflow** orchestration (snapshot → Roboflow workflow → preview/apply)
 - ⚙️ **Panel layout** logic and worker offloading
 - ☀️ **Solar heatmap** visualization
 - 💰 **Financial dashboard** components
 
-### Backend (FastAPI + OpenCV)
+### Hosted Detection (Roboflow Workflow)
 
-- 📡 **Detection API** with request validation via Pydantic models
-- 🖼️ **Image decoding** and quality scoring
-- 🔍 **Roof candidate** extraction using contour + morphology pipeline
-- 🚫 **Obstacle candidate** extraction and filtering
-- 📈 **Confidence scoring** and truncation logic
-- 📋 **Metadata output** including warning codes and estimated fields
+- ☁️ **Serverless hosted workflow** called directly from the browser
+- 🧾 **Structured output parsing** from `svg_output` and `json_output`
+- 📋 **Metadata shaping** into app-compatible roof/obstacle results
 
 ## 🛠️ Tech Stack
 
 | Layer | Stack |
 |---|---|
 | **Frontend** | React 18, TypeScript, Vite, Leaflet, Turf.js, Recharts |
-| **Backend** | FastAPI, Pydantic v2, OpenCV, NumPy, Uvicorn |
+| **Detection** | Roboflow Hosted Workflow API |
 | **External Data** | OpenStreetMap Nominatim, ESRI World Imagery |
 
 ## 📂 Monorepo Structure
@@ -124,66 +121,55 @@ This is not just a detection demo. It's a complete product-style workflow that b
 ```
 .
 ├── frontend/        # React + Vite app (map UI, planning workflow)
-├── backend/         # FastAPI detection service
+├── backend/         # Legacy/optional backend (not required for current frontend runtime)
 ├── README.md
 └── package.json     # root workspace scripts
 ```
 
-## 🔌 API Summary
+## 🔌 Detection API Summary
 
-### Health Check
-```
-GET /health
-```
+Current runtime uses Roboflow hosted workflow directly:
 
-### Roof & Obstacle Detection
 ```
-POST /api/v1/roof/detect
+POST https://serverless.roboflow.com/<workspace>/workflows/<workflow_id>
 ```
 
-**Detection request includes:**
-- Map center and bounds
-- Base64 map snapshot
-- Snapshot dimensions and zoom
-- Detection thresholds and limits
+**Request body includes:**
+- `api_key`
+- `inputs.image` as base64 or URL
 
-**Detection response includes:**
-- `roof_planes[]` - Detected roof plane polygons
-- `obstacles[]` - Detected rooftop obstacles
-- `metadata` - Candidate counts, filtered counts, warnings, estimated metrics
+**Response includes:**
+- `predictions`
+- `json_output`
+- `svg_output`
 
 ## 🚀 Local Development
 
 ### Prerequisites
 
 - **Node.js** 20+
-- **Python** 3.10+
 
 ### Quick Start
 
 **Install dependencies:**
 ```bash
 npm install --workspace frontend
-npm run backend:install
-python -m pip install -r backend/requirements-dev.txt
 ```
 
-**Run both apps:**
+**Run frontend app:**
 ```bash
 npm run frontend:dev
-npm run backend:dev
 ```
+
+Set frontend env variables for detection:
+
+- `VITE_ROBOFLOW_API_URL=https://serverless.roboflow.com`
+- `VITE_ROBOFLOW_WORKSPACE=rooflayout`
+- `VITE_ROBOFLOW_WORKFLOW_ID=detect-count-and-visualize`
+- `VITE_ROBOFLOW_API_KEY=...`
 
 **Services:**
 - 🌐 **Frontend:** http://localhost:5173
-- 🔧 **Backend:** http://localhost:8000
-- 📚 **API Docs:** http://localhost:8000/docs
-
-**Test backend:**
-```bash
-cd backend
-python -m pytest
-```
 
 ## 📋 Workspace Scripts (Root)
 
@@ -193,8 +179,6 @@ python -m pytest
 | `npm run build` | Build frontend for production |
 | `npm run preview` | Preview frontend build |
 | `npm run frontend:dev` | Explicit frontend dev command |
-| `npm run backend:install` | Install backend runtime dependencies |
-| `npm run backend:dev` | Start FastAPI with auto-reload |
 
 ## ⚠️ Limitations and Assumptions
 

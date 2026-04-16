@@ -9,8 +9,6 @@
     "dev": "npm run dev --workspace frontend",
     "build": "npm run build --workspace frontend",
     "preview": "npm run preview --workspace frontend",
-    "frontend:dev": "npm run dev --workspace frontend",
-    "backend:install": "python -m pip install -r backend/requirements.txt",
-    "backend:dev": "python -m uvicorn app.main:app --reload --app-dir backend"
+    "frontend:dev": "npm run dev --workspace frontend"
   }
 }

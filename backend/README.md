@@ -21,6 +21,20 @@ FastAPI service for automatic roof inference from map snapshots.
 - `GET /health`
 - `POST /api/v1/roof/detect`
 
+## Roboflow Workflow Integration
+
+The autodetection endpoint can call a hosted Roboflow Workflow first and will fall back to the local OpenCV pipeline if Roboflow is not configured or fails.
+
+Set these environment variables before starting the backend:
+
+- `ROBOFLOW_API_KEY` (required to enable Roboflow path)
+- `ROBOFLOW_API_URL` (optional, default: `https://serverless.roboflow.com`)
+- `ROBOFLOW_WORKSPACE` (optional, default: `rooflayout`)
+- `ROBOFLOW_WORKFLOW_ID` (optional, default: `detect-count-and-visualize`)
+- `ROBOFLOW_USE_CACHE` (optional, default: `true`)
+
+When Roboflow is active, response metadata `model` is set to `roboflow-workflow:<workspace>/<workflow_id>`.
+
 ### Request payload
 
 ```json

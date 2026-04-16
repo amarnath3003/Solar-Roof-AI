@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from app.schemas.detection import DetectionRequest
+from app.services import image_processing
 from app.services.image_processing import analyze_snapshot
 
 
@@ -96,3 +97,48 @@ def test_analyze_snapshot_prioritizes_center_house_region() -> None:
         lng, lat = obstacle.geometry.coordinates
         assert abs(lng - request.center.lng) < 0.0055
         assert abs(lat - request.center.lat) < 0.0055
+
+
+def test_analyze_snapshot_uses_roboflow_svg_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+    cv2.rectangle(image, (70, 72), (188, 190), (205, 205, 205), thickness=-1)
+    snapshot = _encode_png(image)
+
+    request = DetectionRequest(**_request_payload(snapshot, 256, 256))
+
+    class DummyRoboflowClient:
+        def __init__(self, api_url: str, api_key: str) -> None:
+            assert api_url == "https://serverless.roboflow.com"
+            assert api_key == "test-key"
+
+        def run_workflow(self, workspace_name: str, workflow_id: str, images: dict, use_cache: bool) -> dict:
+            assert workspace_name == "rooflayout"
+            assert workflow_id == "detect-count-and-visualize"
+            assert "image" in images
+            assert use_cache is True
+            return {
+                "svg": (
+                    "<svg width='256' height='256' xmlns='http://www.w3.org/2000/svg'>"
+                    "<polygon points='78,82 182,82 182,186 78,186' confidence='0.93' label='roof-plane' />"
+                    "</svg>"
+                )
+            }
+
+    monkeypatch.setattr(
+        image_processing,
+        "_load_roboflow_settings",
+        lambda: image_processing.RoboflowSettings(
+            api_url="https://serverless.roboflow.com",
+            api_key="test-key",
+            workspace_name="rooflayout",
+            workflow_id="detect-count-and-visualize",
+            use_cache=True,
+        ),
+    )
+    monkeypatch.setattr(image_processing, "InferenceHTTPClient", DummyRoboflowClient)
+
+    response = image_processing.analyze_snapshot(request)
+
+    assert response.roof_planes
+    assert response.metadata.model.startswith("roboflow-workflow:rooflayout/detect-count-and-visualize")
+    assert "ROBOFLOW_FALLBACK" not in response.metadata.warning_codes
