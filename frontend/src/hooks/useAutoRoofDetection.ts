@@ -698,6 +698,7 @@ export function useAutoRoofDetection() {
             api_key: ROBOFLOW_API_KEY,
             inputs: {
               image: toRoboflowImageInput(request.snapshotBase64),
+              confidence_threshold: getRoofConfidenceThreshold(request),
             },
           }),
         });
