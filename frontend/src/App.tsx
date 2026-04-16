@@ -3,6 +3,7 @@ import "./styles.css";
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
+import { DetectionSnipModal, type CropRect } from "@/components/DetectionSnipModal";
 import { MainHeader } from "@/components/Layout";
 import { RoboflowDebugPanel } from "@/components/RoboflowDebugPanel";
 import { WorkspaceContent } from "@/components/Workspace";
@@ -35,6 +36,20 @@ import {
 } from "@/types";
 
 type PlannerSyncState = "estimate" | "paused" | "syncing" | "synced" | "error";
+type DetectionBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
+
+type PendingDetection = {
+  snapshotBase64: string;
+  width: number;
+  height: number;
+  bounds: DetectionBounds;
+  zoom: number;
+};
 
 const DEFAULT_PLANNER_INPUTS: SolarFinancialInputs = {
   // EIA residential monthly bill baseline.
@@ -105,6 +120,40 @@ function logDevPerf(label: string, durationMs: number, detail: string) {
   console.info(`[perf] ${label}: ${durationMs.toFixed(1)}ms | ${detail}`);
 }
 
+async function cropSnapshotBase64(snapshotBase64: string, sourceWidth: number, sourceHeight: number, crop: CropRect) {
+  const image = new Image();
+  image.src = `data:image/png;base64,${snapshotBase64}`;
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Unable to load captured snapshot for snipping."));
+  });
+
+  const x = Math.max(0, Math.min(crop.x, sourceWidth - 1));
+  const y = Math.max(0, Math.min(crop.y, sourceHeight - 1));
+  const width = Math.max(1, Math.min(crop.width, sourceWidth - x));
+  const height = Math.max(1, Math.min(crop.height, sourceHeight - y));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Unable to initialize snip canvas.");
+  }
+
+  context.drawImage(image, x, y, width, height, 0, 0, width, height);
+  const dataUrl = canvas.toDataURL("image/png");
+  const croppedBase64 = dataUrl.includes(",") ? dataUrl.split(",", 2)[1] : dataUrl;
+
+  return {
+    snapshotBase64: croppedBase64,
+    width,
+    height,
+  };
+}
+
 export default function App() {
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
   const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
@@ -132,6 +181,8 @@ export default function App() {
     "Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout."
   );
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [snipModalOpen, setSnipModalOpen] = useState(false);
+  const [pendingDetection, setPendingDetection] = useState<PendingDetection | null>(null);
   const plannerSyncRunRef = useRef(0);
   const capacityRunRef = useRef(0);
 
@@ -797,30 +848,20 @@ export default function App() {
       const snapshot = await captureMapSnapshot(mapContainerRef.current, activeMap);
       const bounds = activeMap.getBounds();
 
-      const detection = await detectFromSnapshot({
-        center: coordinates,
+      setPendingDetection({
+        snapshotBase64: snapshot.snapshotBase64,
+        width: snapshot.width,
+        height: snapshot.height,
         bounds: {
           west: bounds.getWest(),
           south: bounds.getSouth(),
           east: bounds.getEast(),
           north: bounds.getNorth(),
         },
-        snapshotBase64: snapshot.snapshotBase64,
-        width: snapshot.width,
-        height: snapshot.height,
         zoom: activeMap.getZoom(),
-        roofConfidenceThreshold: detectionConfidenceThreshold,
-        obstacleConfidenceThreshold: Math.max(0.2, detectionConfidenceThreshold - 0.05),
       });
-
-      setDetectionPreview(detection);
-      showDetectionPreview(detection);
-
-      if (detection.roofPlanes.length === 0) {
-        setDetectionMessage("No high-confidence roof edges found. Try zooming in and rerun detection.");
-      } else if (detection.metadata.warnings.length > 0) {
-        setDetectionMessage(detection.metadata.warnings[0]);
-      }
+      setSnipModalOpen(true);
+      setDetectionMessage("Snip the house borders, then click Detect Snip.");
     } catch (error) {
       clearDetectionPreview();
       setDetectionPreview(null);
@@ -837,6 +878,66 @@ export default function App() {
     showDetectionPreview,
     clearDetectionPreview,
   ]);
+
+  const runDetectionWithSnapshot = useCallback(async (snapshot: PendingDetection) => {
+    const detection = await detectFromSnapshot({
+      center: coordinates as Coordinates,
+      bounds: snapshot.bounds,
+      snapshotBase64: snapshot.snapshotBase64,
+      width: snapshot.width,
+      height: snapshot.height,
+      zoom: snapshot.zoom,
+      roofConfidenceThreshold: detectionConfidenceThreshold,
+      obstacleConfidenceThreshold: Math.max(0.2, detectionConfidenceThreshold - 0.05),
+    });
+
+    setDetectionPreview(detection);
+    showDetectionPreview(detection);
+
+    if (detection.roofPlanes.length === 0) {
+      setDetectionMessage("No high-confidence roof edges found. Snip tighter around one roof and rerun detection.");
+    } else if (detection.metadata.warnings.length > 0) {
+      setDetectionMessage(detection.metadata.warnings[0]);
+    } else {
+      setDetectionMessage(`Detected ${detection.roofPlanes.length} roof plane(s). Review and accept preview.`);
+    }
+  }, [coordinates, detectFromSnapshot, detectionConfidenceThreshold, showDetectionPreview]);
+
+  const confirmSnipDetection = useCallback(async (cropRect: CropRect) => {
+    if (!pendingDetection || !coordinates) {
+      setSnipModalOpen(false);
+      return;
+    }
+
+    setSnipModalOpen(false);
+    setDetectionMessage("Running detection on snipped image...");
+
+    try {
+      const cropped = await cropSnapshotBase64(
+        pendingDetection.snapshotBase64,
+        pendingDetection.width,
+        pendingDetection.height,
+        cropRect
+      );
+
+      await runDetectionWithSnapshot({
+        ...pendingDetection,
+        snapshotBase64: cropped.snapshotBase64,
+        width: cropped.width,
+        height: cropped.height,
+      });
+    } catch (error) {
+      setDetectionMessage(error instanceof Error ? error.message : "Snip detection failed.");
+    } finally {
+      setPendingDetection(null);
+    }
+  }, [coordinates, pendingDetection, runDetectionWithSnapshot]);
+
+  const cancelSnipDetection = useCallback(() => {
+    setSnipModalOpen(false);
+    setPendingDetection(null);
+    setDetectionMessage("Detection cancelled. Press Auto Detect to capture and snip again.");
+  }, []);
 
   const acceptAutoDetection = useCallback(() => {
     if (!detectionPreview) return;
@@ -897,6 +998,15 @@ export default function App() {
       <RoboflowDebugPanel
         isOpen={debugPanelOpen}
         onClose={() => setDebugPanelOpen(false)}
+      />
+
+      <DetectionSnipModal
+        isOpen={snipModalOpen && pendingDetection !== null}
+        imageDataUrl={pendingDetection ? `data:image/png;base64,${pendingDetection.snapshotBase64}` : ""}
+        sourceWidth={pendingDetection?.width ?? 0}
+        sourceHeight={pendingDetection?.height ?? 0}
+        onCancel={cancelSnipDetection}
+        onConfirm={confirmSnipDetection}
       />
 
       <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 sm:px-5 lg:px-8 lg:pb-8 lg:pt-6 xl:px-10">
