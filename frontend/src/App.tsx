@@ -151,6 +151,37 @@ async function cropSnapshotBase64(snapshotBase64: string, sourceWidth: number, s
     snapshotBase64: croppedBase64,
     width,
     height,
+    sourceRect: {
+      x,
+      y,
+      width,
+      height,
+    },
+  };
+}
+
+function mapBoundsToCrop(bounds: DetectionBounds, sourceWidth: number, sourceHeight: number, crop: CropRect): DetectionBounds {
+  const safeWidth = Math.max(1, sourceWidth);
+  const safeHeight = Math.max(1, sourceHeight);
+
+  const x0 = clampValue(crop.x / safeWidth, 0, 1);
+  const y0 = clampValue(crop.y / safeHeight, 0, 1);
+  const x1 = clampValue((crop.x + crop.width) / safeWidth, 0, 1);
+  const y1 = clampValue((crop.y + crop.height) / safeHeight, 0, 1);
+
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+
+  const lngSpan = bounds.east - bounds.west;
+  const latSpan = bounds.north - bounds.south;
+
+  return {
+    west: bounds.west + lngSpan * minX,
+    east: bounds.west + lngSpan * maxX,
+    north: bounds.north - latSpan * minY,
+    south: bounds.north - latSpan * maxY,
   };
 }
 
@@ -880,8 +911,13 @@ export default function App() {
   ]);
 
   const runDetectionWithSnapshot = useCallback(async (snapshot: PendingDetection) => {
+    const detectionCenter = {
+      lat: (snapshot.bounds.north + snapshot.bounds.south) / 2,
+      lng: (snapshot.bounds.east + snapshot.bounds.west) / 2,
+    };
+
     const detection = await detectFromSnapshot({
-      center: coordinates as Coordinates,
+      center: detectionCenter,
       bounds: snapshot.bounds,
       snapshotBase64: snapshot.snapshotBase64,
       width: snapshot.width,
@@ -901,7 +937,7 @@ export default function App() {
     } else {
       setDetectionMessage(`Detected ${detection.roofPlanes.length} roof plane(s). Review and accept preview.`);
     }
-  }, [coordinates, detectFromSnapshot, detectionConfidenceThreshold, showDetectionPreview]);
+  }, [detectFromSnapshot, detectionConfidenceThreshold, showDetectionPreview]);
 
   const confirmSnipDetection = useCallback(async (cropRect: CropRect) => {
     if (!pendingDetection || !coordinates) {
@@ -919,12 +955,19 @@ export default function App() {
         pendingDetection.height,
         cropRect
       );
+      const croppedBounds = mapBoundsToCrop(
+        pendingDetection.bounds,
+        pendingDetection.width,
+        pendingDetection.height,
+        cropped.sourceRect
+      );
 
       await runDetectionWithSnapshot({
         ...pendingDetection,
         snapshotBase64: cropped.snapshotBase64,
         width: cropped.width,
         height: cropped.height,
+        bounds: croppedBounds,
       });
     } catch (error) {
       setDetectionMessage(error instanceof Error ? error.message : "Snip detection failed.");
