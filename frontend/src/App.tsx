@@ -4,6 +4,7 @@ import "./styles.css";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 import { MainHeader } from "@/components/Layout";
+import { RoboflowDebugPanel } from "@/components/RoboflowDebugPanel";
 import { WorkspaceContent } from "@/components/Workspace";
 import { useAutoRoofDetection } from "@/hooks/useAutoRoofDetection";
 import { useAddressSearch } from "@/hooks/useAddressSearch";
@@ -130,6 +131,7 @@ export default function App() {
   const [plannerSyncMessage, setPlannerSyncMessage] = useState(
     "Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout."
   );
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const plannerSyncRunRef = useRef(0);
   const capacityRunRef = useRef(0);
 
@@ -889,6 +891,12 @@ export default function App() {
         onToggleWorkspace={toggleWorkspace}
         onSetViewMode={setViewMode}
         onToggleSolarOverlay={() => setSolarOverlayEnabled((previous) => !previous)}
+        onOpenDebug={() => setDebugPanelOpen(true)}
+      />
+
+      <RoboflowDebugPanel
+        isOpen={debugPanelOpen}
+        onClose={() => setDebugPanelOpen(false)}
       />
 
       <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 sm:px-5 lg:px-8 lg:pb-8 lg:pt-6 xl:px-10">

@@ -19,6 +19,7 @@ type MainHeaderProps = {
   onToggleWorkspace: () => void;
   onSetViewMode: (mode: ViewMode) => void;
   onToggleSolarOverlay: () => void;
+  onOpenDebug: () => void;
 };
 
 export function MainHeader({
@@ -36,6 +37,7 @@ export function MainHeader({
   onToggleWorkspace,
   onSetViewMode,
   onToggleSolarOverlay,
+  onOpenDebug,
 }: MainHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -230,6 +232,13 @@ export function MainHeader({
                   className="h-11 min-w-[132px]"
                 >
                   {showMapTools ? "Sidebar Off" : "Sidebar On"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={onOpenDebug}
+                  className="h-11 min-w-[90px]"
+                >
+                  Debug
                 </Button>
               </div>
             </div>
