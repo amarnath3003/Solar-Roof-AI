@@ -185,6 +185,30 @@ function mapBoundsToCrop(bounds: DetectionBounds, sourceWidth: number, sourceHei
   };
 }
 
+function getManualPlacementValidationMessage(failures: string[]) {
+  if (failures.includes("missing-roof")) {
+    return "Draw a primary roof polygon before placing panels.";
+  }
+
+  if (failures.includes("outside-roof")) {
+    return "Panel must stay inside the primary roof outline.";
+  }
+
+  if (failures.includes("intersects-setback")) {
+    return "Panel intersects the roof setback buffer.";
+  }
+
+  if (failures.includes("intersects-exclusion")) {
+    return "Panel overlaps an exclusion zone or obstacle clearance area.";
+  }
+
+  if (failures.includes("intersects-panel")) {
+    return "Panel overlaps an existing panel. Move it slightly and try again.";
+  }
+
+  return "Panel placement is invalid for the current roof constraints.";
+}
+
 export default function App() {
   const [roofElements, setRoofElements] = useState<RoofElement[]>([]);
   const [obstacleMarkers, setObstacleMarkers] = useState<ObstacleMarker[]>([]);
@@ -216,6 +240,7 @@ export default function App() {
   const [pendingDetection, setPendingDetection] = useState<PendingDetection | null>(null);
   const plannerSyncRunRef = useRef(0);
   const capacityRunRef = useRef(0);
+  const placedPanelsRef = useRef<PlacedPanel[]>([]);
 
   const {
     address,
@@ -244,10 +269,6 @@ export default function App() {
   const panelLayoutContext = useMemo(
     () => buildPanelLayoutContext(roofElements, obstacleMarkers),
     [roofElements, obstacleMarkers]
-  );
-  const placedPanelFeatures = useMemo(
-    () => placedPanels.map((panel) => panel.feature),
-    [placedPanels]
   );
   const estimatedPanelKw = useMemo(
     () => Number(((placedPanels.length * plannerInputs.panelCapacityWatts) / 1000).toFixed(1)),
@@ -287,6 +308,10 @@ export default function App() {
     panelFootprintSqFt,
     performanceRatio: 0.82,
   });
+
+  useEffect(() => {
+    placedPanelsRef.current = placedPanels;
+  }, [placedPanels]);
 
   useEffect(() => {
     capacityRunRef.current += 1;
@@ -329,14 +354,24 @@ export default function App() {
 
   const handlePlaceManualPanel = useCallback(
     (feature: GeoJSON.Feature<GeoJSON.Polygon>) => {
-      if (!validatePanelPlacement(feature, panelLayoutContext, placedPanelFeatures).isValid) {
+      const existingPanels = placedPanelsRef.current;
+      const validation = validatePanelPlacement(
+        feature,
+        panelLayoutContext,
+        existingPanels.map((panel) => panel.feature)
+      );
+
+      if (!validation.isValid) {
+        setPanelLayoutMessage(getManualPlacementValidationMessage(validation.failures));
         return;
       }
 
-      setPlacedPanels((previous) => [...previous, createPlacedPanelRecord(feature, panelTypeId, "manual")]);
+      const nextPanels = [...existingPanels, createPlacedPanelRecord(feature, panelTypeId, "manual")];
+      placedPanelsRef.current = nextPanels;
+      setPlacedPanels(nextPanels);
       setPanelLayoutMessage("Manual panel stamped into the current usable roof area.");
     },
-    [panelLayoutContext, panelTypeId, placedPanelFeatures]
+    [panelLayoutContext, panelTypeId]
   );
 
   const handlePlannerInputChange = useCallback(
@@ -389,6 +424,7 @@ export default function App() {
     {
       context: panelLayoutContext,
       mode: panelLayoutMode,
+      isPlacementEnabled: solarUnlocked,
       selectedPanelTypeId: panelTypeId,
       alignmentAngleDegrees: panelAlignmentAngleDegrees,
       placedPanels,
@@ -461,6 +497,7 @@ export default function App() {
   }, [featureGroupRef, hasPrimaryRoof, isDrawToolActive, layoutFinished, obstacleMarkers, roofElements, showMapTools]);
 
   useEffect(() => {
+    featureGroupRef.current?.clearLayers();
     setDetectionPreview(null);
     setDetectionMessage(null);
     setRoofAreaSummary(null);
@@ -474,9 +511,11 @@ export default function App() {
     setPlannerCapacityError(null);
     setPlannerSyncState("estimate");
     setPlannerSyncMessage("Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout.");
+    setPendingDetection(null);
+    setSnipModalOpen(false);
     clearDetectionPreview();
     clearDetectionError();
-  }, [coordinates, clearDetectionError, clearDetectionPreview]);
+  }, [coordinates, clearDetectionError, clearDetectionPreview, featureGroupRef]);
 
   useEffect(() => {
     setRoofAreaSummary(null);
@@ -517,14 +556,32 @@ export default function App() {
       return;
     }
 
-    if (panelLayoutMode === "manual") {
+    if (!panelLayoutContext.primaryRoof) {
       setPlacedPanels([]);
-      setPanelLayoutMessage("Roof or obstacle geometry changed. Manual panel stamps were cleared to avoid invalid placement overlaps.");
+      setPanelLayoutMessage("Primary roof was removed. Panel layout was cleared.");
       return;
     }
 
-    setPanelLayoutMessage("Roof or obstacle geometry changed. Repacking panels with the updated roof constraints...");
-  }, [obstacleMarkers, panelLayoutMode, placedPanels.length, roofElements]);
+    const retainedPanels: PlacedPanel[] = [];
+    placedPanels.forEach((panel) => {
+      const existingFeatures = retainedPanels.map((item) => item.feature);
+      if (validatePanelPlacement(panel.feature, panelLayoutContext, existingFeatures).isValid) {
+        retainedPanels.push(panel);
+      }
+    });
+
+    if (retainedPanels.length === placedPanels.length) {
+      return;
+    }
+
+    const removedCount = placedPanels.length - retainedPanels.length;
+    setPlacedPanels(retainedPanels);
+    setPanelLayoutMessage(
+      removedCount === 1
+        ? "1 panel was removed because roof or obstacle edits made it invalid."
+        : `${removedCount} panels were removed because roof or obstacle edits changed valid placement.`
+    );
+  }, [panelLayoutContext, placedPanels]);
 
   const toggleWorkspace = () => {
     setShowMapTools((previous) => {
@@ -541,7 +598,9 @@ export default function App() {
   const clearAllData = () => {
     featureGroupRef.current?.clearLayers();
     clearDetectionPreview();
+    clearDetectionError();
     setDetectionPreview(null);
+    setDetectionMessage(null);
     setRoofAreaSummary(null);
     setRoofAreaMessage(null);
     setLayoutFinished(false);
@@ -553,6 +612,10 @@ export default function App() {
     setPanelLayoutMessage(null);
     setRoofMaxPanelCount(null);
     setPlannerCapacityError(null);
+    setPlannerSyncState("estimate");
+    setPlannerSyncMessage("Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout.");
+    setPendingDetection(null);
+    setSnipModalOpen(false);
   };
 
   const exportBlueprintReport = useCallback(async () => {

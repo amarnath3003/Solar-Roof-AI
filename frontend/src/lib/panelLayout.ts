@@ -491,35 +491,22 @@ function selectPreferredPanels(
     };
   }
 
-  const scoredPanels = candidatePanels.map((panel) => ({
-    panel,
-    score: getPanelSolarScore(panel, solarHeatmap),
-  }));
+  const scoredPanels = candidatePanels
+    .map((panel, index) => ({
+      panel,
+      score: getPanelSolarScore(panel, solarHeatmap),
+      index,
+    }))
+    .sort((left, right) => {
+      const scoreDelta = right.score - left.score;
+      if (Math.abs(scoreDelta) > EPSILON) {
+        return scoreDelta;
+      }
 
-  if (targetCount >= scoredPanels.length) {
-    return {
-      panels: scoredPanels.map(({ panel }) => panel),
-      totalScore: scoredPanels.reduce((sum, panel) => sum + panel.score, 0),
-    };
-  }
+      return left.index - right.index;
+    });
 
-  const prefixSums = new Array(scoredPanels.length + 1).fill(0);
-  for (let index = 0; index < scoredPanels.length; index += 1) {
-    prefixSums[index + 1] = prefixSums[index] + scoredPanels[index].score;
-  }
-
-  let bestStartIndex = 0;
-  let bestWindowScore = Number.NEGATIVE_INFINITY;
-
-  for (let startIndex = 0; startIndex + targetCount <= scoredPanels.length; startIndex += 1) {
-    const windowScore = prefixSums[startIndex + targetCount] - prefixSums[startIndex];
-    if (windowScore > bestWindowScore) {
-      bestWindowScore = windowScore;
-      bestStartIndex = startIndex;
-    }
-  }
-
-  const selectedPanels = scoredPanels.slice(bestStartIndex, bestStartIndex + targetCount);
+  const selectedPanels = scoredPanels.slice(0, targetCount);
 
   return {
     panels: selectedPanels.map(({ panel }) => panel),

@@ -19,6 +19,7 @@ import {
 type PanelInteractionConfig = {
   context: PanelLayoutContext;
   mode: PanelLayoutMode;
+  isPlacementEnabled: boolean;
   selectedPanelTypeId: PanelTypeId;
   alignmentAngleDegrees: number;
   placedPanels: PlacedPanel[];
@@ -192,7 +193,7 @@ export function useLeafletDraw(
   const drawToolStartHandlerRef = useRef<(() => void) | null>(null);
   const drawToolStopHandlerRef = useRef<(() => void) | null>(null);
   const [isDrawToolActive, setIsDrawToolActive] = useState(false);
-  const { context, mode, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
+  const { context, mode, isPlacementEnabled, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
   const placedPanelFeatures = useMemo(
     () => placedPanels.map((panel) => panel.feature),
     [placedPanels]
@@ -661,7 +662,7 @@ export function useLeafletDraw(
       previewLayer = null;
     };
 
-    if (!showMapTools || viewMode === "normal" || mode !== "manual") {
+    if (!showMapTools || viewMode === "normal" || mode !== "manual" || !isPlacementEnabled) {
       clearPreview();
       container.style.cursor = "";
       return;
@@ -713,7 +714,7 @@ export function useLeafletDraw(
     };
 
     const handleMapClick = (event: L.LeafletMouseEvent) => {
-      if (hasActiveDrawTool(map)) {
+      if (hasActiveDrawTool(map) || !isPlacementEnabled) {
         return;
       }
 
@@ -754,7 +755,7 @@ export function useLeafletDraw(
       container.style.cursor = "";
       clearPreview();
     };
-  }, [alignmentAngleDegrees, context, mode, onPlacePanel, placedPanelFeatures, selectedPanelTypeId, showMapTools, viewMode]);
+  }, [alignmentAngleDegrees, context, isPlacementEnabled, mode, onPlacePanel, placedPanelFeatures, selectedPanelTypeId, showMapTools, viewMode]);
 
   const clearDetectionPreview = useCallback(() => {
     previewGroupRef.current?.clearLayers();
