@@ -19,6 +19,7 @@ Configure with environment variables:
 - `VITE_ROBOFLOW_API_URL=https://serverless.roboflow.com`
 - `VITE_ROBOFLOW_WORKSPACE=rooflayout`
 - `VITE_ROBOFLOW_WORKFLOW_ID=detect-count-and-visualize`
+- `VITE_ROBOFLOW_WORKFLOW_URL=https://detect.roboflow.com/workflow/detect-count-and-visualize` (optional, overrides API_URL/WORKSPACE/WORKFLOW_ID)
 - `VITE_ROBOFLOW_API_KEY=...` (required)
 
 If you change `.env`, restart the Vite dev server so updated variables and proxy settings are applied.

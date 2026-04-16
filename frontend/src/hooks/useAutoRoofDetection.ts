@@ -8,15 +8,22 @@ type RoboflowPredictions = {
 
 type RoboflowWorkflowFrame = {
   predictions?: RoboflowPredictions;
-  json_output?: string;
+  json_output?: unknown;
   svg_output?: string;
+  svg?: string;
+  outputs?: Array<{
+    json_output?: unknown;
+    svg_output?: string;
+    svg?: string;
+  }>;
 };
 
-type RoboflowWorkflowResponse = RoboflowWorkflowFrame[];
+type RoboflowWorkflowResponse = RoboflowWorkflowFrame[] | RoboflowWorkflowFrame;
 
 type RoboflowError = {
   error?: string;
   message?: string;
+  detail?: string;
 };
 
 type SvgShapeCandidate = {
@@ -39,6 +46,7 @@ const ROBOFLOW_API_URL = import.meta.env.VITE_ROBOFLOW_API_URL;
 const ROBOFLOW_WORKSPACE = import.meta.env.VITE_ROBOFLOW_WORKSPACE;
 const ROBOFLOW_WORKFLOW_ID = import.meta.env.VITE_ROBOFLOW_WORKFLOW_ID;
 const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY;
+const ROBOFLOW_WORKFLOW_URL = import.meta.env.VITE_ROBOFLOW_WORKFLOW_URL;
 const ROBOFLOW_DEV_PROXY_PREFIX = "/roboflow-proxy";
 
 function getMinRoofAreaPx(request: AutoRoofDetectionRequest): number {
@@ -232,14 +240,163 @@ function parseSvgShapeCandidates(svgMarkup: string): SvgShapeCandidate[] {
   return candidates;
 }
 
-function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoofDetectionRequest): AutoRoofDetectionResult {
-  const started = performance.now();
-  const frame = payload[0];
-  if (!frame || !frame.svg_output) {
-    throw new Error("Roboflow response did not include svg_output.");
+function parseNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function pointsFromUnknown(value: unknown): Array<[number, number]> {
+  if (!Array.isArray(value)) return [];
+
+  const points: Array<[number, number]> = [];
+  for (const entry of value) {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      const x = parseNumber(entry[0]);
+      const y = parseNumber(entry[1]);
+      if (x != null && y != null) points.push([x, y]);
+      continue;
+    }
+
+    if (entry && typeof entry === "object") {
+      const x = parseNumber((entry as Record<string, unknown>).x);
+      const y = parseNumber((entry as Record<string, unknown>).y);
+      if (x != null && y != null) points.push([x, y]);
+    }
   }
 
-  const candidates = parseSvgShapeCandidates(frame.svg_output);
+  return points;
+}
+
+function firstNonEmptyPoints(candidates: Array<Array<[number, number]>>): Array<[number, number]> {
+  for (const points of candidates) {
+    if (points.length > 0) return points;
+  }
+  return [];
+}
+
+function toShapeCandidate(record: Record<string, unknown>): SvgShapeCandidate | null {
+  const points = firstNonEmptyPoints([
+    pointsFromUnknown(record.points),
+    pointsFromUnknown(record.polygon),
+    pointsFromUnknown(record.vertices),
+    pointsFromUnknown(record.corners),
+  ]);
+
+  let shapePoints = points;
+  if (shapePoints.length < 3) {
+    const x = parseNumber(record.x);
+    const y = parseNumber(record.y);
+    const width = parseNumber(record.width);
+    const height = parseNumber(record.height);
+    if (x != null && y != null && width != null && height != null && width > 0 && height > 0) {
+      shapePoints = [
+        [x, y],
+        [x + width, y],
+        [x + width, y + height],
+        [x, y + height],
+      ];
+    }
+  }
+
+  if (shapePoints.length < 3) return null;
+
+  const areaPx = polygonArea(shapePoints);
+  if (areaPx <= 0) return null;
+
+  const confidence =
+    parseNumber(record.confidence) ??
+    parseNumber(record.score) ??
+    parseNumber(record.probability) ??
+    parseNumber(record["data-confidence"]);
+
+  const label = [record.class, record.label, record.name, record.id]
+    .map((value) => (typeof value === "string" ? value : ""))
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .toLowerCase();
+
+  return {
+    points: shapePoints,
+    areaPx,
+    confidence,
+    label,
+  };
+}
+
+function collectCandidatesFromJson(value: unknown, out: SvgShapeCandidate[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectCandidatesFromJson(item, out);
+    return;
+  }
+
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  const candidate = toShapeCandidate(record);
+  if (candidate) out.push(candidate);
+
+  for (const nested of Object.values(record)) {
+    if (nested && (Array.isArray(nested) || typeof nested === "object")) {
+      collectCandidatesFromJson(nested, out);
+    }
+  }
+}
+
+function parseJsonShapeCandidates(jsonOutput: unknown): SvgShapeCandidate[] {
+  let source: unknown = jsonOutput;
+
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if (!trimmed) return [];
+    try {
+      source = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+
+  const candidates: SvgShapeCandidate[] = [];
+  collectCandidatesFromJson(source, candidates);
+  return candidates;
+}
+
+function normalizeRoboflowFrame(payload: RoboflowWorkflowResponse): RoboflowWorkflowFrame | null {
+  if (Array.isArray(payload)) return payload[0] ?? null;
+  if (payload && typeof payload === "object") return payload;
+  return null;
+}
+
+function getFrameSvgMarkup(frame: RoboflowWorkflowFrame): string | undefined {
+  const topLevel = frame.svg_output ?? frame.svg;
+  if (topLevel) return topLevel;
+  const firstOutput = frame.outputs?.[0];
+  return firstOutput?.svg_output ?? firstOutput?.svg;
+}
+
+function getFrameJsonOutput(frame: RoboflowWorkflowFrame): unknown {
+  if (frame.json_output != null) return frame.json_output;
+  return frame.outputs?.[0]?.json_output;
+}
+
+function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoofDetectionRequest): AutoRoofDetectionResult {
+  const started = performance.now();
+  const frame = normalizeRoboflowFrame(payload);
+  if (!frame) {
+    throw new Error("Roboflow response was empty.");
+  }
+
+  const svgMarkup = getFrameSvgMarkup(frame);
+  const svgCandidates = svgMarkup ? parseSvgShapeCandidates(svgMarkup) : [];
+  const jsonCandidates = parseJsonShapeCandidates(getFrameJsonOutput(frame));
+  const candidates = svgCandidates.length > 0 ? svgCandidates : jsonCandidates;
+
+  if (candidates.length === 0) {
+    throw new Error("Roboflow response did not include usable svg_output/json_output geometry.");
+  }
   const minRoofAreaPx = getMinRoofAreaPx(request);
   const minObstacleAreaPx = getMinObstacleAreaPx(request);
   const roofConfidenceThreshold = getRoofConfidenceThreshold(request);
@@ -389,6 +546,37 @@ function toErrorMessage(error: unknown): string {
   return "Detection request failed.";
 }
 
+function withApiKeyQuery(endpoint: string, apiKey: string): string {
+  const normalized = endpoint.trim();
+  const separator = normalized.includes("?") ? "&" : "?";
+  return `${normalized}${separator}api_key=${encodeURIComponent(apiKey)}`;
+}
+
+function toDevProxyUrl(absoluteUrl: string): string {
+  return `${ROBOFLOW_DEV_PROXY_PREFIX}/${absoluteUrl.replace(/^https?:\/\//, "")}`;
+}
+
+function endpointCandidates(): string[] {
+  const candidates: string[] = [];
+
+  if (ROBOFLOW_WORKFLOW_URL) {
+    candidates.push(import.meta.env.DEV ? toDevProxyUrl(ROBOFLOW_WORKFLOW_URL) : ROBOFLOW_WORKFLOW_URL);
+
+    if (/\/workflow\//.test(ROBOFLOW_WORKFLOW_URL)) {
+      const alternate = ROBOFLOW_WORKFLOW_URL.replace(/\/workflow\//, "/workflows/");
+      candidates.push(import.meta.env.DEV ? toDevProxyUrl(alternate) : alternate);
+    }
+  }
+
+  if (ROBOFLOW_API_URL && ROBOFLOW_WORKSPACE && ROBOFLOW_WORKFLOW_ID) {
+    const serverless = `${ROBOFLOW_API_URL.replace(/\/$/, "")}/${ROBOFLOW_WORKSPACE}/workflows/${ROBOFLOW_WORKFLOW_ID}`;
+    candidates.push(import.meta.env.DEV ? toDevProxyUrl(serverless) : serverless);
+  }
+
+  // De-duplicate while preserving order.
+  return [...new Set(candidates)];
+}
+
 export function useAutoRoofDetection() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -398,9 +586,9 @@ export function useAutoRoofDetection() {
     setError(null);
 
     try {
-      if (!ROBOFLOW_WORKSPACE || !ROBOFLOW_WORKFLOW_ID) {
+      if (!ROBOFLOW_WORKFLOW_URL && (!ROBOFLOW_WORKSPACE || !ROBOFLOW_WORKFLOW_ID)) {
         throw new Error(
-          "Roboflow config missing. Set VITE_ROBOFLOW_WORKSPACE and VITE_ROBOFLOW_WORKFLOW_ID."
+          "Roboflow config missing. Set VITE_ROBOFLOW_WORKSPACE and VITE_ROBOFLOW_WORKFLOW_ID, or set VITE_ROBOFLOW_WORKFLOW_URL."
         );
       }
 
@@ -412,30 +600,47 @@ export function useAutoRoofDetection() {
         throw new Error("Roboflow key missing. Set VITE_ROBOFLOW_API_KEY.");
       }
 
-      const endpointBase = import.meta.env.DEV
-        ? ROBOFLOW_DEV_PROXY_PREFIX
-        : (ROBOFLOW_API_URL as string).replace(/\/$/, "");
-      const endpoint = `${endpointBase}/${ROBOFLOW_WORKSPACE}/workflows/${ROBOFLOW_WORKFLOW_ID}`;
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          api_key: ROBOFLOW_API_KEY,
-          inputs: {
-            image: toRoboflowImageInput(request.snapshotBase64),
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const roboflowError = (await response.json().catch(() => ({}))) as RoboflowError;
-        throw new Error(roboflowError.error ?? roboflowError.message ?? "Roboflow detection request failed.");
+      const candidates = endpointCandidates();
+      if (candidates.length === 0) {
+        throw new Error("No Roboflow endpoint candidates were generated from env config.");
       }
 
-      const payload = (await response.json()) as RoboflowWorkflowResponse;
-      return mapRoboflowResponse(payload, request);
+      let lastError: string | null = null;
+      for (const endpoint of candidates) {
+        const endpointWithApiKey = withApiKeyQuery(endpoint, ROBOFLOW_API_KEY);
+        const response = await fetch(endpointWithApiKey, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": ROBOFLOW_API_KEY,
+          },
+          body: JSON.stringify({
+            api_key: ROBOFLOW_API_KEY,
+            inputs: {
+              image: toRoboflowImageInput(request.snapshotBase64),
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as RoboflowWorkflowResponse;
+          return mapRoboflowResponse(payload, request);
+        }
+
+        const roboflowError = (await response.json().catch(() => ({}))) as RoboflowError;
+        lastError =
+          roboflowError.error ??
+          roboflowError.message ??
+          roboflowError.detail ??
+          `Roboflow request failed (${response.status}).`;
+
+        // Retry on likely endpoint mismatch; stop early for definite auth failure and rate limits.
+        if ([401, 429].includes(response.status)) {
+          break;
+        }
+      }
+
+      throw new Error(lastError ?? "Roboflow detection request failed.");
     } catch (requestError) {
       const message = toErrorMessage(requestError);
       setError(message);
