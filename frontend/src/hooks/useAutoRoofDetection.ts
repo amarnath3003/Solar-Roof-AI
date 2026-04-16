@@ -12,6 +12,7 @@ type RoboflowWorkflowFrame = {
   svg_output?: string;
   svg?: string;
   outputs?: Array<{
+    predictions?: RoboflowPredictions;
     json_output?: unknown;
     svg_output?: string;
     svg?: string;
@@ -382,6 +383,11 @@ function getFrameJsonOutput(frame: RoboflowWorkflowFrame): unknown {
   return frame.outputs?.[0]?.json_output;
 }
 
+function getFramePredictions(frame: RoboflowWorkflowFrame): RoboflowPredictions | undefined {
+  if (frame.predictions) return frame.predictions;
+  return frame.outputs?.[0]?.predictions;
+}
+
 function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoofDetectionRequest): AutoRoofDetectionResult {
   const started = performance.now();
   const frame = normalizeRoboflowFrame(payload);
@@ -393,10 +399,7 @@ function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoo
   const svgCandidates = svgMarkup ? parseSvgShapeCandidates(svgMarkup) : [];
   const jsonCandidates = parseJsonShapeCandidates(getFrameJsonOutput(frame));
   const candidates = svgCandidates.length > 0 ? svgCandidates : jsonCandidates;
-
-  if (candidates.length === 0) {
-    throw new Error("Roboflow response did not include usable svg_output/json_output geometry.");
-  }
+  const hasGeometryCandidates = candidates.length > 0;
   const minRoofAreaPx = getMinRoofAreaPx(request);
   const minObstacleAreaPx = getMinObstacleAreaPx(request);
   const roofConfidenceThreshold = getRoofConfidenceThreshold(request);
@@ -510,7 +513,13 @@ function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoo
     warnings.push("No high-confidence roof planes found. Try zooming in and rerun detection.");
   }
 
+  if (!hasGeometryCandidates) {
+    warningCodes.push("NO_GEOMETRY_OUTPUT");
+    warnings.push("Roboflow returned a valid response but no polygon geometry was produced.");
+  }
+
   const elapsedMs = Math.max(0, Math.round(performance.now() - started));
+  const predictions = getFramePredictions(frame);
 
   return {
     roofPlanes,
@@ -522,7 +531,7 @@ function mapRoboflowResponse(payload: RoboflowWorkflowResponse, request: AutoRoo
       filteredRoofPlanes: roofPlanes.length,
       filteredObstacles: obstacles.length,
       model: `roboflow-workflow:${ROBOFLOW_WORKSPACE}/${ROBOFLOW_WORKFLOW_ID}`,
-      imageQuality: frame.predictions?.value ? 0.75 : 0.5,
+      imageQuality: predictions?.value ? 0.75 : 0.5,
       inputWidth: request.width,
       inputHeight: request.height,
       warningCodes,
