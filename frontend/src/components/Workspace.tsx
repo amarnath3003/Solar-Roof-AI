@@ -501,7 +501,7 @@ function MapViewport({
       <div 
         ref={mapContainerRef} 
         className={`absolute inset-0 h-full w-full bg-black transition-all duration-300 ${
-          viewMode === "3d" ? "opacity-0 invisible pointer-events-none" : "opacity-100 visible"
+          viewMode === "3d" ? "hidden pointer-events-none" : "block"
         }`} 
       />
       {viewMode === "3d" && coordinates && (
