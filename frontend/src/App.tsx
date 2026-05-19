@@ -242,6 +242,42 @@ export default function App() {
   const capacityRunRef = useRef(0);
   const placedPanelsRef = useRef<PlacedPanel[]>([]);
 
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!coordinates) {
+      setWeatherData(null);
+      setWeatherError(null);
+      return;
+    }
+
+    const fetchWeather = async () => {
+      setIsWeatherLoading(true);
+      setWeatherError(null);
+      try {
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+        const response = await fetch(
+          `https://weather.googleapis.com/v1/currentConditions:lookup?key=${apiKey}&location.latitude=${coordinates.lat}&location.longitude=${coordinates.lng}&unitsSystem=METRIC`
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch weather from Google Maps Weather API");
+        }
+        const data = await response.json();
+        setWeatherData(data);
+      } catch (err: any) {
+        console.error("Weather API fetch error:", err);
+        setWeatherError(err.message || "Failed to load weather conditions");
+        setWeatherData(null);
+      } finally {
+        setIsWeatherLoading(false);
+      }
+    };
+
+    fetchWeather();
+  }, [coordinates]);
+
   const {
     address,
     setAddress,
@@ -515,6 +551,9 @@ export default function App() {
     setSnipModalOpen(false);
     clearDetectionPreview();
     clearDetectionError();
+    setWeatherData(null);
+    setIsWeatherLoading(false);
+    setWeatherError(null);
   }, [coordinates, clearDetectionError, clearDetectionPreview, featureGroupRef]);
 
   useEffect(() => {
@@ -616,6 +655,9 @@ export default function App() {
     setPlannerSyncMessage("Enter an average monthly bill, then draw a primary roof polygon to turn the estimate into a live packed layout.");
     setPendingDetection(null);
     setSnipModalOpen(false);
+    setWeatherData(null);
+    setIsWeatherLoading(false);
+    setWeatherError(null);
   };
 
   const exportBlueprintReport = useCallback(async () => {
@@ -1122,6 +1164,8 @@ export default function App() {
           showMapTools={showMapTools}
           roofElements={roofElements}
           obstacleMarkers={obstacleMarkers}
+          weatherData={weatherData}
+          isWeatherLoading={isWeatherLoading}
           mapContainerRef={mapContainerRef}
           onClearAll={clearAllData}
           onExportBlueprintReport={exportBlueprintReport}

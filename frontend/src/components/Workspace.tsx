@@ -1,5 +1,5 @@
 import React from "react";
-import { Bot, Check, ChevronDown, ChevronUp, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronUp, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X, Sun, Cloud, CloudRain, CloudLightning, CloudSnow, CloudFog, Wind, Droplets, CloudSun } from "lucide-react";
 import { FinancialSidebarPanel } from "./FinancialSidebarPanel";
 import { SolarPotentialOverlay } from "./SolarPotentialOverlay";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
@@ -71,6 +71,8 @@ type WorkspaceContentProps = {
   plannerSyncMessage: string;
   onPlannerInputChange: (field: PlannerInputField, value: number, min: number, max: number) => void;
   onResetPlannerInputs: () => void;
+  weatherData?: any;
+  isWeatherLoading?: boolean;
 };
 
 
@@ -115,6 +117,8 @@ type WorkspaceDataPanelProps = {
   plannerSyncMessage: string;
   onPlannerInputChange: (field: PlannerInputField, value: number, min: number, max: number) => void;
   onResetPlannerInputs: () => void;
+  weatherData?: any;
+  isWeatherLoading?: boolean;
 };
 
 function formatSqFt(value: number) {
@@ -132,6 +136,152 @@ function SectionTitle({ icon, title, detail }: { icon: React.ReactNode; title: s
       </div>
       {detail ? <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">{detail}</span> : null}
     </div>
+  );
+}
+
+function getWeatherIcon(type: string, isDaytime: boolean) {
+  const iconSize = 24;
+  const normalizedType = type?.toUpperCase() || "";
+  
+  if (normalizedType === "CLEAR") {
+    return isDaytime ? <Sun size={iconSize} className="text-amber-400 animate-pulse" /> : <Sun size={iconSize} className="text-indigo-200 animate-pulse" />;
+  }
+  if (normalizedType === "PARTLY_CLOUDY") {
+    return <CloudSun size={iconSize} className="text-zinc-300 animate-pulse" />;
+  }
+  if (normalizedType === "CLOUDY" || normalizedType === "MOSTLY_CLOUDY" || normalizedType === "SCATTERED_CLOUDS" || normalizedType === "OVERCAST") {
+    return <Cloud size={iconSize} className="text-zinc-400 animate-pulse" />;
+  }
+  if (normalizedType.includes("RAIN") || normalizedType.includes("DRIZZLE") || normalizedType.includes("SHOWER") || normalizedType.includes("PRECIPITATION")) {
+    return <CloudRain size={iconSize} className="text-sky-400 animate-bounce" />;
+  }
+  if (normalizedType.includes("THUNDERSTORM")) {
+    return <CloudLightning size={iconSize} className="text-yellow-400 animate-bounce" />;
+  }
+  if (normalizedType.includes("SNOW") || normalizedType.includes("ICE")) {
+    return <CloudSnow size={iconSize} className="text-blue-100 animate-pulse" />;
+  }
+  if (normalizedType.includes("FOG") || normalizedType.includes("MIST") || normalizedType.includes("HAZE")) {
+    return <CloudFog size={iconSize} className="text-zinc-400 animate-pulse" />;
+  }
+  return <Cloud size={iconSize} className="text-zinc-400" />;
+}
+
+function WeatherCard({ weatherData }: { weatherData: any }) {
+  if (!weatherData) return null;
+
+  const temp = Math.round(weatherData.temperature?.degrees ?? 0);
+  const feelsLike = Math.round(weatherData.feelsLikeTemperature?.degrees ?? 0);
+  const condition = weatherData.weatherCondition?.description?.text || "Unknown";
+  const type = weatherData.weatherCondition?.type || "UNKNOWN";
+  const isDaytime = weatherData.isDaytime ?? true;
+  const cloudCover = weatherData.cloudCover ?? 0;
+  const uvIndex = weatherData.uvIndex ?? 0;
+  const humidity = weatherData.relativeHumidity ?? 0;
+  const windSpeed = Math.round(weatherData.wind?.speed?.value ?? 0);
+  const windUnit = weatherData.wind?.speed?.unit === "KILOMETERS_PER_HOUR" ? "km/h" : "mph";
+
+  // UV index classification for solar
+  let uvClass = "Low";
+  let uvColor = "text-emerald-400";
+  if (uvIndex >= 8) {
+    uvClass = "Very High";
+    uvColor = "text-red-400";
+  } else if (uvIndex >= 6) {
+    uvClass = "High";
+    uvColor = "text-amber-400";
+  } else if (uvIndex >= 3) {
+    uvClass = "Moderate";
+    uvColor = "text-yellow-400";
+  }
+
+  // Solar suitability evaluation based on current weather
+  let suitabilityLabel = "Excellent";
+  let suitabilityColor = "text-emerald-400 border-emerald-500/20 bg-emerald-500/10";
+  
+  if (cloudCover > 80) {
+    suitabilityLabel = "Poor (Dense Clouds)";
+    suitabilityColor = "text-red-400 border-red-500/20 bg-red-500/10";
+  } else if (cloudCover > 40) {
+    suitabilityLabel = "Moderate (Partly Cloudy)";
+    suitabilityColor = "text-yellow-400 border-yellow-500/20 bg-yellow-500/10";
+  } else if (!isDaytime) {
+    suitabilityLabel = "None (Nighttime)";
+    suitabilityColor = "text-zinc-400 border-zinc-500/20 bg-zinc-500/10";
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3 animate-fade-in">
+      <SectionTitle icon={<Sun size={14} className="text-amber-400 animate-pulse" />} title="Hyperlocal Weather" />
+      
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+        {/* Main Temperature and Icon */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-inner">
+              {getWeatherIcon(type, isDaytime)}
+            </div>
+            <div>
+              <div className="text-2xl font-light text-white leading-none">{temp}°C</div>
+              <div className="mt-1 text-[10px] text-zinc-400 tracking-wider uppercase font-medium">{condition}</div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest leading-none">Feels like</div>
+            <div className="mt-1 text-sm font-light text-zinc-300">{feelsLike}°C</div>
+          </div>
+        </div>
+
+        {/* Suitability Badge */}
+        <div className={`mt-3 flex items-center justify-between rounded-xl border px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold ${suitabilityColor}`}>
+          <span>Solar Conditions:</span>
+          <span>{suitabilityLabel}</span>
+        </div>
+
+        {/* Grid for Solar-Relevant metrics */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {/* Cloud Cover */}
+          <div className="rounded-xl border border-white/5 bg-black/10 px-2 py-2">
+            <div className="text-[8px] uppercase tracking-[0.12em] text-zinc-500 font-medium">Cloud Cover</div>
+            <div className="mt-1 flex items-baseline gap-1">
+              <span className="text-sm font-semibold text-white">{cloudCover}%</span>
+              <span className="text-[8px] text-zinc-400 uppercase tracking-wider">
+                {cloudCover < 10 ? "Clear" : cloudCover < 50 ? "Partly" : "Overcast"}
+              </span>
+            </div>
+          </div>
+
+          {/* UV Index */}
+          <div className="rounded-xl border border-white/5 bg-black/10 px-2 py-2">
+            <div className="text-[8px] uppercase tracking-[0.12em] text-zinc-500 font-medium">UV Index</div>
+            <div className="mt-1 flex items-baseline gap-1">
+              <span className="text-sm font-semibold text-white">{uvIndex}</span>
+              <span className={`text-[8px] uppercase tracking-wider font-semibold ${uvColor}`}>
+                {uvClass}
+              </span>
+            </div>
+          </div>
+
+          {/* Humidity */}
+          <div className="rounded-xl border border-white/5 bg-black/10 px-2 py-2 flex items-center gap-2">
+            <Droplets size={12} className="text-sky-400 shrink-0" />
+            <div>
+              <div className="text-[8px] uppercase tracking-[0.12em] text-zinc-500 font-medium leading-none">Humidity</div>
+              <div className="mt-1 text-[11px] font-semibold text-zinc-200 leading-none">{humidity}%</div>
+            </div>
+          </div>
+
+          {/* Wind */}
+          <div className="rounded-xl border border-white/5 bg-black/10 px-2 py-2 flex items-center gap-2">
+            <Wind size={12} className="text-teal-400 shrink-0" />
+            <div>
+              <div className="text-[8px] uppercase tracking-[0.12em] text-zinc-500 font-medium leading-none">Wind</div>
+              <div className="mt-1 text-[11px] font-semibold text-zinc-200 leading-none">{windSpeed} {windUnit}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -245,6 +395,8 @@ function WorkspaceDataPanel({
   plannerSyncMessage,
   onPlannerInputChange,
   onResetPlannerInputs,
+  weatherData,
+  isWeatherLoading,
 }: WorkspaceDataPanelProps) {
   const [showActivityLog, setShowActivityLog] = React.useState(false);
 
@@ -267,6 +419,14 @@ function WorkspaceDataPanel({
 
         <div className="custom-scrollbar flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4">
           <div className="flex flex-col gap-4">
+            {isWeatherLoading && (
+              <div className="flex items-center justify-center p-6 rounded-3xl border border-white/10 bg-white/[0.03] animate-pulse">
+                <Loader2 size={16} className="animate-spin text-zinc-400 mr-2" />
+                <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-medium animate-pulse">Fetching Weather...</span>
+              </div>
+            )}
+            {weatherData && <WeatherCard weatherData={weatherData} />}
+
             <section className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-3">
               <SectionTitle icon={<Bot size={14} className="text-white" />} title="Automation" />
               <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
@@ -511,6 +671,8 @@ export function WorkspaceContent({
   plannerSyncMessage,
   onPlannerInputChange,
   onResetPlannerInputs,
+  weatherData,
+  isWeatherLoading,
 }: WorkspaceContentProps) {
   if (!coordinates) {
     return <EmptyState />;
@@ -571,6 +733,8 @@ export function WorkspaceContent({
               plannerSyncMessage={plannerSyncMessage}
               onPlannerInputChange={onPlannerInputChange}
               onResetPlannerInputs={onResetPlannerInputs}
+              weatherData={weatherData}
+              isWeatherLoading={isWeatherLoading}
             />
           )}
         </div>
