@@ -242,6 +242,21 @@ export default function App() {
   const capacityRunRef = useRef(0);
   const placedPanelsRef = useRef<PlacedPanel[]>([]);
 
+  const {
+    address,
+    setAddress,
+    coordinates,
+    searchResults,
+    recentSearches,
+    isSearching,
+    selectAddress,
+    handleSearchSubmit,
+  } = useAddressSearch({
+    onLocationSelected: () => {
+      setViewMode("normal");
+    },
+  });
+
   const [weatherData, setWeatherData] = useState<any>(null);
   const [isWeatherLoading, setIsWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
@@ -277,21 +292,6 @@ export default function App() {
 
     fetchWeather();
   }, [coordinates]);
-
-  const {
-    address,
-    setAddress,
-    coordinates,
-    searchResults,
-    recentSearches,
-    isSearching,
-    selectAddress,
-    handleSearchSubmit,
-  } = useAddressSearch({
-    onLocationSelected: () => {
-      setViewMode("normal");
-    },
-  });
 
   const {
     detectFromSnapshot,
