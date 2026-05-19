@@ -500,8 +500,8 @@ function MapViewport({
     <Card className="relative h-full min-h-[25rem] overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl lg:min-h-[35rem]">
       <div 
         ref={mapContainerRef} 
-        className={`absolute inset-0 h-full w-full bg-black transition-opacity duration-300 ${
-          viewMode === "3d" ? "opacity-0 pointer-events-none" : "opacity-100"
+        className={`absolute inset-0 h-full w-full bg-black transition-all duration-300 ${
+          viewMode === "3d" ? "opacity-0 invisible pointer-events-none" : "opacity-100 visible"
         }`} 
       />
       {viewMode === "3d" && coordinates && (
