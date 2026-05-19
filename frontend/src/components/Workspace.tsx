@@ -344,7 +344,9 @@ interface Google3DMapProps {
 
 function Google3DMap({ coordinates }: Google3DMapProps) {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [mode, setMode] = useState<"aerial" | "photorealistic">("aerial");
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<any>(null);
 
   useEffect(() => {
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -356,35 +358,50 @@ function Google3DMap({ coordinates }: Google3DMapProps) {
       if (!containerRef.current) return;
 
       containerRef.current.innerHTML = "";
+      mapRef.current = null;
 
-      try {
-        const map3DElement = new (window as any).google.maps.maps3d.Map3DElement({
-          center: { lat: coordinates.lat, lng: coordinates.lng, altitude: 80 },
-          tilt: 55,
-          range: 160,
-          heading: 0,
-        });
+      if (mode === "photorealistic") {
+        try {
+          const map3DElement = new (window as any).google.maps.maps3d.Map3DElement({
+            center: { lat: coordinates.lat, lng: coordinates.lng, altitude: 85 },
+            tilt: 55,
+            range: 160,
+            heading: 0,
+          });
 
-        map3DElement.setAttribute("heading-control", "true");
-        map3DElement.setAttribute("tilt-control", "true");
-        map3DElement.setAttribute("zoom-control", "true");
+          map3DElement.setAttribute("heading-control", "true");
+          map3DElement.setAttribute("tilt-control", "true");
+          map3DElement.setAttribute("zoom-control", "true");
 
-        containerRef.current.appendChild(map3DElement);
-      } catch (err) {
-        console.error("Failed to load Photorealistic 3D Maps element:", err);
-        new (window as any).google.maps.Map(containerRef.current, {
-          center: { lat: coordinates.lat, lng: coordinates.lng },
-          zoom: 20,
-          mapTypeId: "hybrid",
-          tilt: 45,
-          heading: 0,
-          rotateControl: true,
-          tiltControl: true,
-        });
+          containerRef.current.appendChild(map3DElement);
+          mapRef.current = map3DElement;
+        } catch (err) {
+          console.error("Failed to load Photorealistic 3D Maps element, falling back to Aerial:", err);
+          setMode("aerial");
+        }
+      } else {
+        // Standard high-resolution hybrid 3D map with 45 degree tilt
+        try {
+          const map = new (window as any).google.maps.Map(containerRef.current, {
+            center: { lat: coordinates.lat, lng: coordinates.lng },
+            zoom: 19.5,
+            mapTypeId: "hybrid",
+            tilt: 45,
+            heading: 0,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+            rotateControl: true,
+            tiltControl: true,
+          });
+          mapRef.current = map;
+        } catch (err) {
+          console.error("Failed to load standard Google Map:", err);
+        }
       }
     };
 
-    if ((window as any).google?.maps?.maps3d?.Map3DElement) {
+    if ((window as any).google?.maps) {
       initMap();
     } else if (existingScript) {
       existingScript.addEventListener("load", initMap);
@@ -397,7 +414,7 @@ function Google3DMap({ coordinates }: Google3DMapProps) {
       script.onload = initMap;
       document.head.appendChild(script);
     }
-  }, [coordinates]);
+  }, [coordinates, mode]);
 
   return (
     <div className="relative h-full w-full">
@@ -410,10 +427,38 @@ function Google3DMap({ coordinates }: Google3DMapProps) {
         </div>
       )}
       
-      <div className="absolute left-4 bottom-4 z-10 flex flex-col gap-1.5 pointer-events-none">
-        <div className="rounded-xl border border-white/10 bg-black/60 backdrop-blur-md px-3 py-2 text-[10px] text-zinc-300 font-medium flex items-center gap-2 shadow-lg">
-          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Google 3D Photorealistic View Enabled</span>
+      {/* Dynamic Toggle Panel */}
+      <div className="absolute left-4 bottom-4 z-10 flex flex-col gap-2 pointer-events-auto">
+        <div className="flex items-center gap-1.5 rounded-2xl border border-white/10 bg-black/80 backdrop-blur-md p-1 shadow-2xl">
+          <button
+            onClick={() => setMode("aerial")}
+            className={`rounded-xl px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all duration-200 ${
+              mode === "aerial"
+                ? "bg-white/10 text-white shadow-inner"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Aerial 3D
+          </button>
+          <button
+            onClick={() => setMode("photorealistic")}
+            className={`rounded-xl px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-all duration-200 ${
+              mode === "photorealistic"
+                ? "bg-amber-400/20 text-amber-300 border border-amber-400/20"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Photorealistic (Beta)
+          </button>
+        </div>
+        
+        <div className="rounded-xl border border-white/5 bg-black/60 backdrop-blur-md px-3 py-1.5 text-[9px] text-zinc-400 flex items-center gap-2 max-w-xs shadow-lg pointer-events-none">
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>
+            {mode === "aerial" 
+              ? "Aerial 3D (Google Hybrid Tiles) Connected"
+              : "Google WebGL 3D Tiles Connected"}
+          </span>
         </div>
       </div>
     </div>
