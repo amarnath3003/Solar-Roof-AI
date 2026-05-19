@@ -59,11 +59,21 @@ export function useAddressSearch({ onLocationSelected }: UseAddressSearchOptions
 
     setIsSearching(true);
     try {
+      const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleMapsApiKey}`
       );
-      const data = (await response.json()) as NominatimResult[];
-      setSearchResults(data);
+      const data = await response.json();
+      if (data && data.status === "OK" && Array.isArray(data.results)) {
+        const mappedResults: NominatimResult[] = data.results.map((result: any) => ({
+          display_name: result.formatted_address,
+          lat: String(result.geometry.location.lat),
+          lon: String(result.geometry.location.lng),
+        }));
+        setSearchResults(mappedResults);
+      } else {
+        setSearchResults([]);
+      }
     } catch {
       setSearchResults([]);
     } finally {

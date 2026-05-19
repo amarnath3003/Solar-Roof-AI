@@ -328,18 +328,24 @@ export function useLeafletDraw(
         19
       );
 
+      const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
       const monochromeTiles = L.tileLayer(
-        "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
+        `https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${googleMapsApiKey}`,
         {
           maxZoom: 20,
-          subdomains: "abcd",
+          subdomains: ["mt0", "mt1", "mt2", "mt3"],
           crossOrigin: "anonymous",
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO',
+          attribution: "&copy; Google Maps",
         }
       );
       const esriImagery = L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        { maxZoom: 21, crossOrigin: "anonymous" }
+        `https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&key=${googleMapsApiKey}`,
+        {
+          maxZoom: 21,
+          subdomains: ["mt0", "mt1", "mt2", "mt3"],
+          crossOrigin: "anonymous",
+          attribution: "&copy; Google Maps",
+        }
       );
 
       monochromeLayerRef.current = monochromeTiles;
