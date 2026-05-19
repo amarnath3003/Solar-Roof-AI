@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Bot, Check, ChevronDown, ChevronUp, Circle, Download, Layers, Loader2, Monitor, Ruler, Search, Square, Trash2, X, Sun, Cloud, CloudRain, CloudLightning, CloudSnow, CloudFog, Wind, Droplets, CloudSun } from "lucide-react";
 import { FinancialSidebarPanel } from "./FinancialSidebarPanel";
 import { SolarPotentialOverlay } from "./SolarPotentialOverlay";
@@ -338,16 +338,110 @@ function EmptyState() {
   );
 }
 
+interface Google3DMapProps {
+  coordinates: Coordinates;
+}
+
+function Google3DMap({ coordinates }: Google3DMapProps) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+    const scriptId = "google-maps-3d-script";
+    const existingScript = document.getElementById(scriptId);
+
+    const initMap = () => {
+      setIsLoaded(true);
+      if (!containerRef.current) return;
+
+      containerRef.current.innerHTML = "";
+
+      try {
+        const map3DElement = new (window as any).google.maps.maps3d.Map3DElement({
+          center: { lat: coordinates.lat, lng: coordinates.lng, altitude: 80 },
+          tilt: 55,
+          range: 160,
+          heading: 0,
+        });
+
+        map3DElement.setAttribute("heading-control", "true");
+        map3DElement.setAttribute("tilt-control", "true");
+        map3DElement.setAttribute("zoom-control", "true");
+
+        containerRef.current.appendChild(map3DElement);
+      } catch (err) {
+        console.error("Failed to load Photorealistic 3D Maps element:", err);
+        new (window as any).google.maps.Map(containerRef.current, {
+          center: { lat: coordinates.lat, lng: coordinates.lng },
+          zoom: 20,
+          mapTypeId: "hybrid",
+          tilt: 45,
+          heading: 0,
+          rotateControl: true,
+          tiltControl: true,
+        });
+      }
+    };
+
+    if ((window as any).google?.maps?.maps3d?.Map3DElement) {
+      initMap();
+    } else if (existingScript) {
+      existingScript.addEventListener("load", initMap);
+    } else {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=beta&libraries=maps3d`;
+      script.async = true;
+      script.defer = true;
+      script.onload = initMap;
+      document.head.appendChild(script);
+    }
+  }, [coordinates]);
+
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="absolute inset-0 h-full w-full bg-[#050505]" />
+      
+      {!isLoaded && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#050505]/95 backdrop-blur-sm z-20">
+          <Loader2 className="h-8 w-8 animate-spin text-amber-400 mb-3" />
+          <p className="text-xs uppercase tracking-widest text-zinc-400 font-medium animate-pulse">Initializing Google 3D Engine...</p>
+        </div>
+      )}
+      
+      <div className="absolute left-4 bottom-4 z-10 flex flex-col gap-1.5 pointer-events-none">
+        <div className="rounded-xl border border-white/10 bg-black/60 backdrop-blur-md px-3 py-2 text-[10px] text-zinc-300 font-medium flex items-center gap-2 shadow-lg">
+          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Google 3D Photorealistic View Enabled</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MapViewport({
   mapContainerRef,
+  viewMode,
+  coordinates,
   children,
 }: {
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
+  viewMode: ViewMode;
+  coordinates: Coordinates | null;
   children?: React.ReactNode;
 }) {
   return (
     <Card className="relative h-full min-h-[25rem] overflow-hidden rounded-[2rem] border-white/15 p-0 shadow-2xl lg:min-h-[35rem]">
-      <div ref={mapContainerRef} className="absolute inset-0 h-full w-full bg-black" />
+      <div 
+        ref={mapContainerRef} 
+        className={`absolute inset-0 h-full w-full bg-black transition-opacity duration-300 ${
+          viewMode === "3d" ? "opacity-0 pointer-events-none" : "opacity-100"
+        }`} 
+      />
+      {viewMode === "3d" && coordinates && (
+        <Google3DMap coordinates={coordinates} />
+      )}
       {children}
     </Card>
   );
@@ -689,8 +783,14 @@ export function WorkspaceContent({
             showMapTools ? "lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_18rem]" : ""
           }`}
         >
-          <MapViewport mapContainerRef={mapContainerRef}>
-            {showMapTools && solarUnlocked && <SolarPotentialOverlay financials={plannerFinancials} />}
+          <MapViewport 
+            mapContainerRef={mapContainerRef}
+            viewMode={viewMode}
+            coordinates={coordinates}
+          >
+            {viewMode !== "3d" && showMapTools && solarUnlocked && (
+              <SolarPotentialOverlay financials={plannerFinancials} />
+            )}
           </MapViewport>
           {showMapTools && (
             <WorkspaceDataPanel
