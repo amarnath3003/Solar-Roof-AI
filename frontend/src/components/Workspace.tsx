@@ -340,9 +340,10 @@ function EmptyState() {
 
 interface Google3DMapProps {
   coordinates: Coordinates;
+  showMapTools: boolean;
 }
 
-function Google3DMap({ coordinates }: Google3DMapProps) {
+function Google3DMap({ coordinates, showMapTools }: Google3DMapProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [mode, setMode] = useState<"aerial" | "photorealistic">("aerial");
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -401,20 +402,37 @@ function Google3DMap({ coordinates }: Google3DMapProps) {
       }
     };
 
+    let timer: NodeJS.Timeout;
+
+    const startInit = () => {
+      // Clear any prior timer to debounce layout recalculations
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        initMap();
+      }, 300); // 300ms matches the layout transition animation of Leaflet and CSS grid columns
+    };
+
     if ((window as any).google?.maps) {
-      initMap();
+      startInit();
     } else if (existingScript) {
-      existingScript.addEventListener("load", initMap);
+      existingScript.addEventListener("load", startInit);
     } else {
       const script = document.createElement("script");
       script.id = scriptId;
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=beta&libraries=maps3d`;
       script.async = true;
       script.defer = true;
-      script.onload = initMap;
+      script.onload = startInit;
       document.head.appendChild(script);
     }
-  }, [coordinates, mode]);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (existingScript) {
+        existingScript.removeEventListener("load", startInit);
+      }
+    };
+  }, [coordinates, mode, showMapTools]);
 
   return (
     <div className="relative h-full w-full">
@@ -469,11 +487,13 @@ function MapViewport({
   mapContainerRef,
   viewMode,
   coordinates,
+  showMapTools,
   children,
 }: {
   mapContainerRef: React.MutableRefObject<HTMLDivElement | null>;
   viewMode: ViewMode;
   coordinates: Coordinates | null;
+  showMapTools: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -485,7 +505,7 @@ function MapViewport({
         }`} 
       />
       {viewMode === "3d" && coordinates && (
-        <Google3DMap coordinates={coordinates} />
+        <Google3DMap coordinates={coordinates} showMapTools={showMapTools} />
       )}
       {children}
     </Card>
@@ -832,6 +852,7 @@ export function WorkspaceContent({
             mapContainerRef={mapContainerRef}
             viewMode={viewMode}
             coordinates={coordinates}
+            showMapTools={showMapTools}
           >
             {viewMode !== "3d" && showMapTools && solarUnlocked && (
               <SolarPotentialOverlay financials={plannerFinancials} />
