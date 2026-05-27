@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./logo.png" alt="Solar Roof AI Logo" width="120" height="120">
-  <h1 align="center">☀️ Solar Roof AI Planner</h1>
+  <h1 align="center"> Solar Roof AI Planner</h1>
   <p align="center">
     <strong>An interactive solar planning workspace for rooftop mapping, AI-assisted roof detection, panel layout simulation, and financial estimation.</strong>
   </p>
