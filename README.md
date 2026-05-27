@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://api.iconify.design/lucide:hexagon.svg" alt="Solar Roof AI Logo" width="80" height="80">
+  <img src="https://img.icons8.com/color/96/000000/sun--v1.png" alt="Solar Roof AI Logo" width="80" height="80">
   <h1 align="center">☀️ Solar Roof AI</h1>
   <p align="center">
     <strong>An interactive solar planning workspace for rooftop mapping, AI-assisted roof detection, panel layout simulation, and financial estimation.</strong>
