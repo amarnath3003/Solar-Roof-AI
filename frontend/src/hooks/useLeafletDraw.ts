@@ -209,6 +209,9 @@ export function useLeafletDraw(
   const drawToolStartHandlerRef = useRef<(() => void) | null>(null);
   const drawToolStopHandlerRef = useRef<(() => void) | null>(null);
   const [isDrawToolActive, setIsDrawToolActive] = useState(false);
+  const previousViewModeRef = useRef<ViewMode>("normal");
+  const isAutoBlueprintRef = useRef(false);
+  const isAutoBlueprintChangeRef = useRef(false);
   const { context, mode, isPlacementEnabled, selectedPanelTypeId, alignmentAngleDegrees, placedPanels, onPlacePanel } = panelInteraction;
   const placedPanelFeatures = useMemo(
     () => placedPanels.map((panel) => panel.feature),
@@ -530,8 +533,17 @@ export function useLeafletDraw(
     if (!map || !setViewMode) return;
 
     const handleZoomEnd = () => {
-      if (map.getZoom() >= MAX_TILE_ZOOM && viewMode !== "blueprint") {
+      const zoom = map.getZoom();
+
+      if (zoom > MAX_TILE_ZOOM && viewMode !== "blueprint") {
+        previousViewModeRef.current = viewMode;
+        isAutoBlueprintRef.current = true;
+        isAutoBlueprintChangeRef.current = true;
         setViewMode("blueprint");
+      } else if (zoom <= MAX_TILE_ZOOM && isAutoBlueprintRef.current) {
+        isAutoBlueprintRef.current = false;
+        isAutoBlueprintChangeRef.current = true;
+        setViewMode(previousViewModeRef.current);
       }
     };
 
@@ -540,6 +552,16 @@ export function useLeafletDraw(
       map.off("zoomend", handleZoomEnd);
     };
   }, [setViewMode, viewMode]);
+
+  useEffect(() => {
+    if (isAutoBlueprintChangeRef.current) {
+      isAutoBlueprintChangeRef.current = false;
+      return;
+    }
+    if (isAutoBlueprintRef.current) {
+      isAutoBlueprintRef.current = false;
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;
