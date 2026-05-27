@@ -1,18 +1,19 @@
-# ☀️ Solar Roof AI
+<div align="center">
+  <img src="https://img.icons8.com/color/96/000000/sun--v1.png" alt="Solar Roof AI Logo" width="80" height="80">
+  <h1 align="center">☀️ Solar Roof AI</h1>
+  <p align="center">
+    <strong>An interactive solar planning workspace for rooftop mapping, AI-assisted roof detection, panel layout simulation, and financial estimation.</strong>
+  </p>
 
-> An interactive solar planning workspace for rooftop mapping, AI-assisted roof detection, panel layout simulation, and financial estimation.
-
-Solar Roof AI is currently running as a **frontend-only React + TypeScript** geospatial workspace with **direct Roboflow hosted workflow** integration for auto-detection. It is designed to feel like a lightweight solar pre-sales planning product: users can search a property, draw or detect roof geometry, analyze usable area and exposure, simulate panel placement, and export results.
-
----
-
-## 📸 Screenshots
-
-Get a visual tour of Solar Roof AI in action:
-
-| Workspace Overview | Blueprint | PDF Report |
-|---|---|---|
-| ![Workspace](frontend/src/screenshots/localhost_5173_(pc%201920).png) | ![Blueprint](frontend/src/screenshots/localhost_5173_(pc%201920)%20(2).png) | ![PDF Report](frontend/src/screenshots/solar%20ss.png) |
+  <p align="center">
+    <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18.2-61DAFB?logo=react&logoColor=black" alt="React"></a>
+    <a href="https://vitejs.dev/"><img src="https://img.shields.io/badge/Vite-5.4-646CFF?logo=vite&logoColor=white" alt="Vite"></a>
+    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white" alt="TypeScript"></a>
+    <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-4.2-38B2AC?logo=tailwind-css&logoColor=white" alt="Tailwind CSS"></a>
+    <a href="https://roboflow.com/"><img src="https://img.shields.io/badge/Roboflow-AI_Detection-6706CE?logo=roboflow&logoColor=white" alt="Roboflow"></a>
+    <a href="https://creativecommons.org/licenses/by/4.0/"><img src="https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg" alt="License: CC BY 4.0"></a>
+  </p>
+</div>
 
 ---
 
@@ -22,178 +23,135 @@ Solar feasibility tools are often fragmented across GIS software, internal sprea
 
 This is not just a detection demo. It's a complete product-style workflow that balances:
 
-✨ Interactive map UX  
-🤖 Assistive computer vision  
-📐 Geospatial calculations  
-💰 Planning and financial context
+- ✨ **Interactive map UX**
+- 🤖 **Assistive computer vision**
+- 📐 **Geospatial calculations**
+- 💰 **Planning and financial context**
+
+---
+
+## 📸 See It In Action
+
+| Workspace Overview | Blueprint | PDF Report |
+| :---: | :---: | :---: |
+| <img src="frontend/src/screenshots/localhost_5173_(pc%201920).png" width="300" alt="Workspace"> | <img src="frontend/src/screenshots/localhost_5173_(pc%201920)%20(2).png" width="300" alt="Blueprint"> | <img src="frontend/src/screenshots/solar%20ss.png" width="300" alt="PDF Report"> |
+
+---
 
 ## ⚡ Core Features
 
-### 1️⃣ Property Search and Workspace Entry
+### 1️⃣ Property Search & Mapping
+- **Address & Place Search:** Fast rooftop lookup.
+- **Map-first Workspace:** Centered automatically on the selected property.
+- **Satellite Analysis Flow:** Visual roof clarity with high-res imagery.
 
-- **Address and place search** for fast rooftop lookup
-- **Map-first workspace** centered on the selected property
-- **Satellite-first analysis flow** for visual roof clarity
-
-### 2️⃣ Roof and Obstacle Mapping Tools
-
-- **Manual drawing** with interactive map editing tools
-- **Separate editable layers** for roof polygons and obstacles
-- **Support for irregular shapes** and exclusion zones
+### 2️⃣ Roof & Obstacle Mapping Tools
+- **Manual Drawing:** Interactive map editing tools.
+- **Separate Layers:** Editable layers for roof polygons and obstacles.
+- **Complex Geometries:** Support for irregular shapes and exclusion zones.
 
 ### 3️⃣ AI-Assisted Roof Detection
+- **Direct Integration:** Send snapshots directly to Roboflow hosted workflows for analysis.
+- **Plane & Obstacle Detection:** Identify roof structures directly from imagery.
+- **Review & Apply:** Preview detections before applying to the workspace. Tune confidence and area filters.
 
-- **Capture map snapshots** from the frontend
-- **Send directly to Roboflow hosted workflow** for analysis
-- **Detect roof planes and obstacles** from imagery
-- **Preview before applying** detections to workspace
-- **Tune confidence thresholds** and area filters for precision
+### 4️⃣ Geospatial & Solar Analysis
+- **Metrics Computation:** Calculate gross area, blocked area, and net usable area.
+- **Orientation Estimation:** AI-driven orientation candidates.
+- **Solar Exposure Heatmap:** Overlay visual zones showing stronger and weaker exposure areas based on sun position and context.
 
-### 4️⃣ Roof Area and Suitability Analysis
+### 5️⃣ Panel Layout Simulation
+- **Manual & Auto-pack Placement:** Fine-grained manual control or automatic maximization.
+- **Capacity-Aware Selection:** Select panel types with real-time capacity counting.
+- **Validation:** Prevent overlaps and invalid placements using worker-based operations for responsive UI.
 
-- **Compute roof metrics:** gross area, blocked area, net usable area
-- **Estimate roof orientation** metrics from image-driven candidates
-- **Generate warnings** when detections need review
+### 6️⃣ Financial Planning & Export
+- **Financial Dashboard:** Sizing inputs, planning assumptions, and real-time estimation charts.
+- **Export Options:** GeoJSON export of roof/obstacle geometry.
+- **Reporting:** Generate blueprint-style PDF reports for planning handoffs.
 
-### 5️⃣ Solar Exposure Heatmap
-
-- **Solar overlay** based on sun position and roof context
-- **Visual zones** showing stronger and weaker exposure areas
-- **Planning-grade guidance** for pre-sales exploration
-
-### 6️⃣ Panel Layout Simulation
-
-- **Manual panel placement** for fine control
-- **Auto-pack mode** to maximize panel placement
-- **Panel type selection** with capacity-aware counting
-- **Worker-based operations** for responsive UI
-- **Placement validation** to prevent overlaps and invalid placements
-
-### 7️⃣ Financial Planning Layer
-
-- **System sizing inputs** and planning assumptions
-- **Capacity-linked estimation** driven by placed panels
-- **Dashboard and chart overlays** for scenario feedback
-
-### 8️⃣ Export and Reporting
-
-- **GeoJSON export** of roof and obstacle geometry
-- **Blueprint-style reports** for planning handoff
+---
 
 ## 🎯 End-to-End User Flow
 
-1. 🔍 Search for a property
-2. 🗺️ Enter the map workspace and switch to imagery mode if needed
-3. 🏗️ Draw roof and obstacles manually, or run auto-detection
-4. ✅ Review detection results and accept only what looks correct
-5. 📊 Calculate usable roof area and inspect solar heatmap hints
-6. 📦 Simulate panel placement manually or with auto-pack
-7. 💵 Review estimated system capacity and financial outcomes
-8. 📤 Export geometry/report artifacts
+1. 🔍 **Search** for a property.
+2. 🗺️ **Enter** the map workspace and switch to imagery mode.
+3. 🏗️ **Draw** roof and obstacles manually, or run **auto-detection**.
+4. ✅ **Review** detection results and accept only what looks correct.
+5. 📊 **Calculate** usable roof area and inspect solar heatmap hints.
+6. 📦 **Simulate** panel placement manually or with auto-pack.
+7. 💵 **Review** estimated system capacity and financial outcomes.
+8. 📤 **Export** geometry/report artifacts.
+
+---
 
 ## 🏗️ Architecture
 
-### Frontend (Vite + React + TypeScript)
-
-- 🗺️ **Interactive mapping** and draw/edit UX
-- 🔎 **Address search** integration
-- 🤖 **Detection workflow** orchestration (snapshot → Roboflow workflow → preview/apply)
-- ⚙️ **Panel layout** logic and worker offloading
+### Frontend (React 18 + Vite + TypeScript)
+- 🗺️ **Interactive mapping** and draw/edit UX (Leaflet, Turf.js)
+- 🔎 **Address search** integration (OpenStreetMap Nominatim)
+- ⚙️ **Panel layout logic** and worker offloading
 - ☀️ **Solar heatmap** visualization
-- 💰 **Financial dashboard** components
+- 💰 **Financial dashboard** components (Recharts)
 
 ### Hosted Detection (Roboflow Workflow)
-
-- ☁️ **Serverless hosted workflow** called directly from the browser
+- ☁️ **Serverless workflow** called directly from the browser (`POST https://serverless.roboflow.com/<workspace>/workflows/<workflow_id>`)
 - 🧾 **Structured output parsing** from `svg_output` and `json_output`
 - 📋 **Metadata shaping** into app-compatible roof/obstacle results
 
-## 🛠️ Tech Stack
+---
 
-| Layer | Stack |
-|---|---|
-| **Frontend** | React 18, TypeScript, Vite, Leaflet, Turf.js, Recharts |
-| **Detection** | Roboflow Hosted Workflow API |
-| **External Data** | OpenStreetMap Nominatim, ESRI World Imagery |
-
-## 📂 Monorepo Structure
-
-```
-.
-├── frontend/        # React + Vite app (map UI, planning workflow)
-├── backend/         # Legacy/optional backend (not required for current frontend runtime)
-├── README.md
-└── package.json     # root workspace scripts
-```
-
-## 🔌 Detection API Summary
-
-Current runtime uses Roboflow hosted workflow directly:
-
-```
-POST https://serverless.roboflow.com/<workspace>/workflows/<workflow_id>
-```
-
-**Request body includes:**
-- `api_key`
-- `inputs.image` as base64 or URL
-
-**Response includes:**
-- `predictions`
-- `json_output`
-- `svg_output`
-
-## 🚀 Local Development
+## 🚀 Getting Started
 
 ### Prerequisites
-
 - **Node.js** 20+
 
-### Quick Start
+### Installation & Execution
 
-**Install dependencies:**
-```bash
-npm install --workspace frontend
-```
+1. **Install dependencies:**
+   ```bash
+   npm install --workspace frontend
+   ```
 
-**Run frontend app:**
-```bash
-npm run frontend:dev
-```
+2. **Set up Environment Variables:**
+   Create a `.env` file in the `frontend` directory with the following variables:
+   ```env
+   VITE_ROBOFLOW_API_URL=https://serverless.roboflow.com
+   VITE_ROBOFLOW_WORKSPACE=rooflayout
+   VITE_ROBOFLOW_WORKFLOW_ID=detect-count-and-visualize
+   VITE_ROBOFLOW_API_KEY=your_api_key_here
+   ```
 
-Set frontend env variables for detection:
+3. **Run the development server:**
+   ```bash
+   npm run frontend:dev
+   ```
 
-- `VITE_ROBOFLOW_API_URL=https://serverless.roboflow.com`
-- `VITE_ROBOFLOW_WORKSPACE=rooflayout`
-- `VITE_ROBOFLOW_WORKFLOW_ID=detect-count-and-visualize`
-- `VITE_ROBOFLOW_API_KEY=...`
+   The app will be available at **http://localhost:5173**.
 
-**Services:**
-- 🌐 **Frontend:** http://localhost:5173
-
-## 📋 Workspace Scripts (Root)
-
-| Command | Action |
-|---|---|
-| `npm run dev` | Start frontend dev server |
-| `npm run build` | Build frontend for production |
-| `npm run preview` | Preview frontend build |
-| `npm run frontend:dev` | Explicit frontend dev command |
+---
 
 ## ⚠️ Limitations and Assumptions
+- 🖼️ Detection quality heavily depends on imagery quality, zoom level, and roof contrast.
+- 📐 Pitch, aspect, and height values are estimation-grade derived from 2D imagery.
+- 🎯 Results are intended for **planning and pre-sales exploration**, not permit-ready engineering.
+- ✏️ Manual edits remain essential for complex edge cases.
 
-- 🖼️ Detection quality depends on imagery quality, zoom, and roof contrast
-- 📐 Pitch/aspect/height values are estimation-grade from 2D imagery
-- 🎯 Results are suitable for planning and pre-sales exploration, not permit-ready engineering
-- ✏️ Manual edits remain essential for edge cases and complex roof geometries
+---
 
-## 🔮 Future Improvements
+## 🔮 Roadmap
+- [ ] Stronger model-based detection beyond classical CV heuristics.
+- [ ] More explicit setback and code-rule constraints for panel placement.
+- [ ] Time-series irradiance simulation and seasonal production profiles.
+- [ ] Authentication, saved projects, and collaboration workflows.
 
-- 🧠 Stronger model-based detection beyond classical CV heuristics
-- 📏 More explicit setback and code-rule constraints for panel placement
-- 📈 Time-series irradiance simulation and seasonal production profiles
-- 🔐 Authentication, saved projects, and collaboration workflows
+---
+
+## 🤝 Contributing
+Contributions, issues, and feature requests are welcome! 
+Feel free to check [issues page](#) if you want to contribute.
+
+---
 
 ## 📄 License
-
-No license file is currently included in this repository. Add a LICENSE file before production or commercial distribution.
+This project is licensed under the [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/) License.
