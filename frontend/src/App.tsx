@@ -428,7 +428,8 @@ export default function App() {
       alignmentAngleDegrees: panelAlignmentAngleDegrees,
       placedPanels,
       onPlacePanel: handlePlaceManualPanel,
-    }
+    },
+    setViewMode
   );
 
   const solarUnlockMessage = useMemo(() => {

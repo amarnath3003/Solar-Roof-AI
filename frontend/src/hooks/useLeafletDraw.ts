@@ -3,6 +3,7 @@ import L from "leaflet";
 import "leaflet-draw";
 
 const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
+const MAX_TILE_ZOOM = 20;
 
 // Improve tooltips and texts globally for better UI/UX
 (L as any).drawLocal.draw.toolbar.buttons.polygon = 'Draw a custom roof area';
@@ -190,7 +191,8 @@ export function useLeafletDraw(
   setRoofElements: React.Dispatch<React.SetStateAction<RoofElement[]>>,
   setObstacleMarkers: React.Dispatch<React.SetStateAction<ObstacleMarker[]>>,
   solarHeatmap: SolarHeatmap | null,
-  panelInteraction: PanelInteractionConfig
+  panelInteraction: PanelInteractionConfig,
+  setViewMode?: React.Dispatch<React.SetStateAction<ViewMode>>
 ) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -522,6 +524,22 @@ export function useLeafletDraw(
 
     setTimeout(() => map.invalidateSize(), 100);
   }, [viewMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !setViewMode) return;
+
+    const handleZoomEnd = () => {
+      if (map.getZoom() >= MAX_TILE_ZOOM && viewMode !== "blueprint") {
+        setViewMode("blueprint");
+      }
+    };
+
+    map.on("zoomend", handleZoomEnd);
+    return () => {
+      map.off("zoomend", handleZoomEnd);
+    };
+  }, [setViewMode, viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;
