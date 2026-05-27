@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/gmaps-tiles/(.*)",
+      "destination": "https://mt0.google.com/$1"
+    }
+  ]
+}
