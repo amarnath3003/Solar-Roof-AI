@@ -108,21 +108,21 @@ This is not just a detection demo. It's a complete product-style workflow that b
 
 ### Installation & Execution
 
-1. **Install dependencies:**
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/anomalyco/Solar-Roof-AI.git
+   cd Solar-Roof-AI
+   ```
+
+2. **Install dependencies:**
    ```bash
    npm install --workspace frontend
    ```
 
-2. **Set up Environment Variables:**
+3. **Set up Environment Variables:**
    Create a `.env` file in the `frontend` directory with the following variables:
-   ```env
-   VITE_ROBOFLOW_API_URL=https://serverless.roboflow.com
-   VITE_ROBOFLOW_WORKSPACE=rooflayout
-   VITE_ROBOFLOW_WORKFLOW_ID=detect-count-and-visualize
-   VITE_ROBOFLOW_API_KEY=your_api_key_here
-   ```
 
-3. **Run the development server:**
+4. **Run the development server:**
    ```bash
    npm run frontend:dev
    ```
