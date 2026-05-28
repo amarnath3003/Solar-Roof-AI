@@ -347,14 +347,14 @@ export function useLeafletDraw(
       );
 
       const googleRoadmap = L.tileLayer(
-        "/gmaps-tiles/vt/lyrs=m&x={x}&y={y}&z={z}",
+        `/gmaps-tiles/vt/lyrs=m&x={x}&y={y}&z={z}&key=${GMAPS_API_KEY}`,
         {
           maxZoom: 20,
           attribution: "&copy; Google",
         }
       );
       const googleSatellite = L.tileLayer(
-        "/gmaps-tiles/vt/lyrs=y&x={x}&y={y}&z={z}",
+        `/gmaps-tiles/vt/lyrs=y&x={x}&y={y}&z={z}&key=${GMAPS_API_KEY}`,
         {
           maxZoom: 20,
           attribution: "&copy; Google",
