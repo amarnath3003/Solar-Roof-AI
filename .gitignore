@@ -82,8 +82,10 @@ Thumbs.db
 .npmrmcp
 .mcp
 opencode.json
+.mcp.json
 .gemini/
 .cursor/
 .zed/
 
 .vercel
+.mcp.json
