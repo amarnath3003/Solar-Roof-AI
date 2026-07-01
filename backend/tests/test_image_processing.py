@@ -99,46 +99,61 @@ def test_analyze_snapshot_prioritizes_center_house_region() -> None:
         assert abs(lat - request.center.lat) < 0.0055
 
 
-def test_analyze_snapshot_uses_roboflow_svg_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+def _stub_ml_response(model: str = "roof-seg-yolo11-local"):
+    from app.schemas.detection import DetectionMetadata, DetectionResponse
+
+    def _run(req, image, source_width, source_height, started, warning_codes, warnings):
+        return DetectionResponse(
+            roof_planes=[],
+            obstacles=[],
+            metadata=DetectionMetadata(
+                processing_ms=1,
+                roof_candidates=0,
+                obstacle_candidates=0,
+                filtered_roof_planes=0,
+                filtered_obstacles=0,
+                model=model,
+                image_quality=0.5,
+                input_width=source_width,
+                input_height=source_height,
+                warning_codes=warning_codes,
+                warnings=warnings,
+            ),
+        )
+
+    return _run
+
+
+def test_analyze_snapshot_uses_local_model_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import ml_detector
+
     image = np.zeros((256, 256, 3), dtype=np.uint8)
     cv2.rectangle(image, (70, 72), (188, 190), (205, 205, 205), thickness=-1)
-    snapshot = _encode_png(image)
+    request = DetectionRequest(**_request_payload(_encode_png(image), 256, 256))
 
-    request = DetectionRequest(**_request_payload(snapshot, 256, 256))
+    monkeypatch.setattr(ml_detector, "model_available", lambda: True)
+    monkeypatch.setattr(ml_detector, "analyze_snapshot_ml", _stub_ml_response())
 
-    class DummyRoboflowClient:
-        def __init__(self, api_url: str, api_key: str) -> None:
-            assert api_url == "https://serverless.roboflow.com"
-            assert api_key == "test-key"
+    response = analyze_snapshot(request)
 
-        def run_workflow(self, workspace_name: str, workflow_id: str, images: dict, use_cache: bool) -> dict:
-            assert workspace_name == "rooflayout"
-            assert workflow_id == "detect-count-and-visualize"
-            assert "image" in images
-            assert use_cache is True
-            return {
-                "svg": (
-                    "<svg width='256' height='256' xmlns='http://www.w3.org/2000/svg'>"
-                    "<polygon points='78,82 182,82 182,186 78,186' confidence='0.93' label='roof-plane' />"
-                    "</svg>"
-                )
-            }
+    assert response.metadata.model == "roof-seg-yolo11-local"
+    assert "ML_FALLBACK" not in response.metadata.warning_codes
 
-    monkeypatch.setattr(
-        image_processing,
-        "_load_roboflow_settings",
-        lambda: image_processing.RoboflowSettings(
-            api_url="https://serverless.roboflow.com",
-            api_key="test-key",
-            workspace_name="rooflayout",
-            workflow_id="detect-count-and-visualize",
-            use_cache=True,
-        ),
-    )
-    monkeypatch.setattr(image_processing, "InferenceHTTPClient", DummyRoboflowClient)
 
-    response = image_processing.analyze_snapshot(request)
+def test_analyze_snapshot_falls_back_to_opencv_when_model_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import ml_detector
 
-    assert response.roof_planes
-    assert response.metadata.model.startswith("roboflow-workflow:rooflayout/detect-count-and-visualize")
-    assert "ROBOFLOW_FALLBACK" not in response.metadata.warning_codes
+    image = np.zeros((256, 256, 3), dtype=np.uint8)
+    cv2.rectangle(image, (70, 72), (188, 190), (205, 205, 205), thickness=-1)
+    request = DetectionRequest(**_request_payload(_encode_png(image), 256, 256))
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("model exploded")
+
+    monkeypatch.setattr(ml_detector, "model_available", lambda: True)
+    monkeypatch.setattr(ml_detector, "analyze_snapshot_ml", _boom)
+
+    response = analyze_snapshot(request)
+
+    assert response.metadata.model.startswith("opencv-edge-segmentation")
+    assert "ML_FALLBACK" in response.metadata.warning_codes

@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--imgsz", type=int, default=896)
     parser.add_argument("--batch", type=float, default=-1, help="-1 = auto (60%% VRAM)")
     parser.add_argument("--patience", type=int, default=30)
+    parser.add_argument("--workers", type=int, default=4, help="DataLoader workers (lower = less RAM)")
     parser.add_argument("--device", default=None, help="cuda index or 'cpu'")
     parser.add_argument("--name", default="roof_seg")
     parser.add_argument("--resume", action="store_true")
@@ -56,6 +57,8 @@ def main() -> None:
         batch=args.batch,
         patience=args.patience,
         device=device,
+        workers=args.workers,
+        cache=False,        # keep system RAM low on constrained Windows hosts
         project=str(config.RUNS_DIR),
         name=args.name,
         resume=args.resume,
