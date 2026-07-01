@@ -76,6 +76,15 @@ Thumbs.db
 .vercel
 .netlify
 
+# ML model artifacts (large / generated - regenerate via ml.datasets.prepare + ml.train)
+backend/ml/data/
+backend/ml/runs/
+backend/ml/weights/
+backend/ml/eval/
+*.pt
+*.cache
+labels.cache
+
 # AI / Coding Assistant Tools
 .codex
 .codex/
