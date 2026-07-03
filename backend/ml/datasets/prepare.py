@@ -40,6 +40,11 @@ DEFAULT_SOURCES = [
     ("belgilabs", "roof-segmentation-pjlms", 1),      # 2876 imgs, per-plane roof faces (nadir aerial)
     ("vec-bvgxj", "roof-segmentation-zytzo", 4),       # 895 imgs, roof + skylight/solar (nadir tiles)
 ]
+# NOTE: keep the training set COLOR nadir to match the app's Google satellite imagery.
+# building-detection-1ny5t/aerial-image-detection (grayscale/dark) and
+# satellite-rooftop-map (near-black, heavily augmented) were downloaded and
+# inspected, then EXCLUDED: nadir but wrong colour domain, they hurt more than help.
+# See candidate_sources.md.
 
 UNIFIED_NAMES = ["roof", "obstacle"]
 CATEGORY_TO_ID = {"roof": 0, "obstacle": 1}
@@ -210,6 +215,11 @@ def merge(sources: List[Source], data_root: Path, out_dir: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare merged roof dataset")
     parser.add_argument("--list", action="store_true", help="Print planned sources and exit")
+    parser.add_argument(
+        "--download-only",
+        action="store_true",
+        help="Download raw sources but skip the merge (safe to run while a training job reads roof_merged).",
+    )
     parser.add_argument("--out", default=str(config.DATA_DIR / "roof_merged"))
     args = parser.parse_args()
 
@@ -224,6 +234,10 @@ def main() -> None:
     raw_root.mkdir(parents=True, exist_ok=True)
     for source in sources:
         download_source(source, key, raw_root)
+
+    if args.download_only:
+        print("[prepare] download-only: skipping merge")
+        return
 
     merge(sources, raw_root, Path(args.out))
 

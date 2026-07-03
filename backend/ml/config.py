@@ -28,6 +28,7 @@ ROOF_KEYWORDS = (
     "slope",   # belgilabs labels roof faces as slope_flat / slope_tri / ...
     "hip",
     "gable",
+    "house",   # some nadir sets label whole buildings as "house"
 )
 OBSTACLE_KEYWORDS = (
     "obstacle",

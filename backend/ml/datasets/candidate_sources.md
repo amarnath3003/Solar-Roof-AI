@@ -30,3 +30,10 @@ sample image before committing (see [[satellite-nadir-only]] rule).
 
 Caveat: none of these have per-plane + obstacle labels like the current two sets —
 they are whole-roof / footprint outlines. Good for outline generalization, not ridge lines.
+
+## Downloaded + inspected, then EXCLUDED (2026-07 iteration 2)
+The app runs on **color** Google-satellite imagery, so colour domain matters as much as nadir:
+- `building-detection-1ny5t/aerial-image-detection` v6 — nadir but **grayscale + dark**, sparse roofs. Domain mismatch → excluded.
+- `satellite-rooftop-map/satellite-rooftop-map` v3 — nadir but near-black, heavily augmented export. Excluded.
+- `otofare/rooftop-segmentation-qttqu-4dlkw` v2 — color nadir ✓ but tiny (95) + stadium-biased/mirror-augmented. Low priority.
+Rule extension: prefer COLOR nadir residential imagery matching Google satellite; verify a sample before merging.
