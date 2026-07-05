@@ -3,14 +3,6 @@
     {
       "source": "/gmaps-tiles/(.*)",
       "destination": "https://mt0.google.com/$1"
-    },
-    {
-      "source": "/roboflow-proxy/serverless.roboflow.com/(.*)",
-      "destination": "https://serverless.roboflow.com/$1"
-    },
-    {
-      "source": "/roboflow-proxy/detect.roboflow.com/(.*)",
-      "destination": "https://detect.roboflow.com/$1"
     }
   ]
 }

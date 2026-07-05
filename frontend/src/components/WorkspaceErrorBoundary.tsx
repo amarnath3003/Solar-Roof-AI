@@ -24,6 +24,10 @@ export class WorkspaceErrorBoundary extends React.Component<
     return { hasError: true };
   }
 
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(`WorkspaceErrorBoundary (${this.props.title}) caught an error:`, error, errorInfo.componentStack);
+  }
+
   componentDidUpdate(previousProps: WorkspaceErrorBoundaryProps) {
     if (this.state.hasError && previousProps.children !== this.props.children) {
       this.setState({ hasError: false });

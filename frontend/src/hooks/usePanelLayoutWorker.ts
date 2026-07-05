@@ -54,52 +54,81 @@ export type WorkerTimedResult<TPayload> = {
   durationMs: number;
 };
 
+const MAX_CONSECUTIVE_WORKER_CRASHES = 3;
+
 export function usePanelLayoutWorker() {
   const workerRef = useRef<Worker | null>(null);
   const pendingRequestsRef = useRef(new Map<number, PendingRequest>());
   const nextRequestIdRef = useRef(0);
 
   useEffect(() => {
-    const worker = new Worker(new URL("../workers/panelLayout.worker.ts", import.meta.url), { type: "module" });
+    let disposed = false;
+    let consecutiveCrashes = 0;
+    let teardownCurrent: (() => void) | null = null;
 
-    const handleMessage = (event: MessageEvent<WorkerResponse>) => {
-      const response = event.data;
-      const pendingRequest = pendingRequestsRef.current.get(response.requestId);
+    const spawnWorker = () => {
+      const worker = new Worker(new URL("../workers/panelLayout.worker.ts", import.meta.url), { type: "module" });
 
-      if (!pendingRequest) {
-        return;
-      }
+      const handleMessage = (event: MessageEvent<WorkerResponse>) => {
+        consecutiveCrashes = 0;
+        const response = event.data;
+        const pendingRequest = pendingRequestsRef.current.get(response.requestId);
 
-      pendingRequestsRef.current.delete(response.requestId);
+        if (!pendingRequest) {
+          return;
+        }
 
-      if (response.ok) {
-        pendingRequest.resolve({
-          payload: response.payload,
-          durationMs: response.durationMs,
+        pendingRequestsRef.current.delete(response.requestId);
+
+        if (response.ok) {
+          pendingRequest.resolve({
+            payload: response.payload,
+            durationMs: response.durationMs,
+          });
+          return;
+        }
+
+        pendingRequest.reject(new Error(response.error));
+      };
+
+      const teardown = () => {
+        worker.removeEventListener("message", handleMessage);
+        worker.removeEventListener("error", handleError);
+        worker.terminate();
+        if (workerRef.current === worker) {
+          workerRef.current = null;
+        }
+      };
+
+      const handleError = (event: ErrorEvent) => {
+        const message = event.message || "Panel layout worker crashed.";
+        pendingRequestsRef.current.forEach((pendingRequest) => {
+          pendingRequest.reject(new Error(message));
         });
-        return;
-      }
+        pendingRequestsRef.current.clear();
 
-      pendingRequest.reject(new Error(response.error));
+        // Replace the crashed worker so later packing requests keep working,
+        // but stop respawning if the worker script itself fails to load.
+        teardown();
+        consecutiveCrashes += 1;
+        if (!disposed && consecutiveCrashes < MAX_CONSECUTIVE_WORKER_CRASHES) {
+          spawnWorker();
+        } else if (!disposed) {
+          console.error("Panel layout worker crashed repeatedly; giving up on respawn.", message);
+        }
+      };
+
+      worker.addEventListener("message", handleMessage);
+      worker.addEventListener("error", handleError);
+      workerRef.current = worker;
+      teardownCurrent = teardown;
     };
 
-    const handleError = (event: ErrorEvent) => {
-      const message = event.message || "Panel layout worker crashed.";
-      pendingRequestsRef.current.forEach((pendingRequest) => {
-        pendingRequest.reject(new Error(message));
-      });
-      pendingRequestsRef.current.clear();
-    };
-
-    worker.addEventListener("message", handleMessage);
-    worker.addEventListener("error", handleError);
-    workerRef.current = worker;
+    spawnWorker();
 
     return () => {
-      worker.removeEventListener("message", handleMessage);
-      worker.removeEventListener("error", handleError);
-      worker.terminate();
-      workerRef.current = null;
+      disposed = true;
+      teardownCurrent?.();
 
       pendingRequestsRef.current.forEach((pendingRequest) => {
         pendingRequest.reject(new Error("Panel layout worker terminated."));

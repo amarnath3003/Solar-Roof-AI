@@ -76,8 +76,7 @@ export type SolarFinancialResults = {
   financialProjection: SolarProjectionPoint[];
 };
 
-export function useSolarFinancials(inputs: SolarFinancialInputs): SolarFinancialResults {
-  return useMemo(() => {
+export function calculateSolarFinancials(inputs: SolarFinancialInputs): SolarFinancialResults {
     const monthlyBill = Math.max(0, inputs.monthlyBill);
     const panelCapacityWatts = Math.max(1, inputs.panelCapacityWatts);
     const energyCostPerKwh = Math.max(0.01, inputs.energyCostPerKwh);
@@ -208,5 +207,9 @@ export function useSolarFinancials(inputs: SolarFinancialInputs): SolarFinancial
       panelFootprintSqFt: panelFootprintSqFt === null ? null : roundValue(panelFootprintSqFt, 2),
       financialProjection,
     };
-  }, [inputs]);
+}
+
+export function useSolarFinancials(inputs: SolarFinancialInputs): SolarFinancialResults {
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- inputs is spread-recreated by callers; memo keyed on its values
+  return useMemo(() => calculateSolarFinancials(inputs), [JSON.stringify(inputs)]);
 }

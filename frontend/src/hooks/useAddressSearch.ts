@@ -14,6 +14,7 @@ export function useAddressSearch({ onLocationSelected }: UseAddressSearchOptions
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<NominatimResult[]>(() => {
     if (typeof window === "undefined") {
       return [];
@@ -58,14 +59,20 @@ export function useAddressSearch({ onLocationSelected }: UseAddressSearchOptions
     }
 
     setIsSearching(true);
+    setSearchError(null);
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(query)}`
       );
+      if (!response.ok) {
+        throw new Error(`Address lookup failed (${response.status})`);
+      }
       const data = (await response.json()) as NominatimResult[];
       setSearchResults(data);
-    } catch {
+    } catch (error) {
+      console.warn("Address search failed:", error);
       setSearchResults([]);
+      setSearchError("Address lookup is unavailable right now. Try again in a moment.");
     } finally {
       setIsSearching(false);
     }
@@ -124,6 +131,7 @@ export function useAddressSearch({ onLocationSelected }: UseAddressSearchOptions
     searchResults,
     recentSearches,
     isSearching,
+    searchError,
     selectAddress,
     handleSearchSubmit,
   };

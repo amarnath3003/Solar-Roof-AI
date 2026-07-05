@@ -7,6 +7,7 @@ import { NominatimResult, ViewMode } from "@/types";
 type MainHeaderProps = {
   address: string;
   isSearching: boolean;
+  searchError?: string | null;
   searchResults: NominatimResult[];
   recentSearches: NominatimResult[];
   coordinates: { lat: number; lng: number } | null;
@@ -24,6 +25,7 @@ type MainHeaderProps = {
 export function MainHeader({
   address,
   isSearching,
+  searchError,
   searchResults,
   recentSearches,
   coordinates,
@@ -39,10 +41,42 @@ export function MainHeader({
 }: MainHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const showRecentSearches = isSearchFocused && address.trim().length === 0 && recentSearches.length > 0;
   const showSearchDropdown = showRecentSearches || searchResults.length > 0;
+  const dropdownItems = showRecentSearches ? [...recentSearches, ...searchResults] : searchResults;
+
+  useEffect(() => {
+    setActiveResultIndex(-1);
+  }, [address, searchResults, isSearchFocused]);
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setIsSearchFocused(false);
+      setActiveResultIndex(-1);
+      return;
+    }
+    if (event.key === "ArrowDown" && dropdownItems.length > 0) {
+      event.preventDefault();
+      setActiveResultIndex((previous) => (previous + 1) % dropdownItems.length);
+      return;
+    }
+    if (event.key === "ArrowUp" && dropdownItems.length > 0) {
+      event.preventDefault();
+      setActiveResultIndex((previous) => (previous <= 0 ? dropdownItems.length - 1 : previous - 1));
+      return;
+    }
+    if (event.key === "Enter") {
+      if (activeResultIndex >= 0 && activeResultIndex < dropdownItems.length) {
+        onSelectAddress(dropdownItems[activeResultIndex]);
+        setActiveResultIndex(-1);
+        return;
+      }
+      onSearchSubmit();
+    }
+  };
 
   useEffect(() => {
     if (!menuOpen) {
@@ -101,7 +135,12 @@ export function MainHeader({
                     value={address}
                     onChange={(event) => onAddressChange(event.target.value)}
                     onFocus={() => setIsSearchFocused(true)}
-                    onKeyDown={(event) => event.key === "Enter" && onSearchSubmit()}
+                    onKeyDown={handleSearchKeyDown}
+                    role="combobox"
+                    aria-label="Search address"
+                    aria-expanded={showSearchDropdown}
+                    aria-controls="address-search-results"
+                    aria-autocomplete="list"
                     className="h-11 border-white/5 bg-black/30 pl-11 pr-14"
                   />
                   <Button
@@ -120,15 +159,20 @@ export function MainHeader({
                   )}
                 >
                   <div className="rounded-2xl border border-white/10 bg-black/[0.92] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
-                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                    <div id="address-search-results" role="listbox" aria-label="Address suggestions" className="max-h-60 overflow-y-auto custom-scrollbar">
                       {showRecentSearches && (
                         <>
                           <div className="px-4 pb-2 pt-1 text-[10px] uppercase tracking-[0.14em] text-zinc-500">Recent searches</div>
                           {recentSearches.map((result, index) => (
                             <button
                               key={`recent-${result.lat}-${result.lon}-${index}`}
+                              role="option"
+                              aria-selected={activeResultIndex === index}
                               onClick={() => onSelectAddress(result)}
-                              className="flex w-full flex-col rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white/[0.08]"
+                              className={cn(
+                                "flex w-full flex-col rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white/[0.08]",
+                                activeResultIndex === index && "bg-white/[0.08]"
+                              )}
                             >
                               <span className="text-sm leading-relaxed text-zinc-200">{result.display_name}</span>
                             </button>
@@ -136,36 +180,59 @@ export function MainHeader({
                           {searchResults.length > 0 ? <div className="my-2 border-t border-white/10" /> : null}
                         </>
                       )}
-                      {searchResults.map((result, index) => (
-                        <button
-                          key={`${result.lat}-${result.lon}-${index}`}
-                          onClick={() => onSelectAddress(result)}
-                          className="flex w-full flex-col rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white/[0.08]"
-                        >
-                          <span className="text-sm leading-relaxed text-zinc-200">{result.display_name}</span>
-                        </button>
-                      ))}
+                      {searchResults.map((result, index) => {
+                        const itemIndex = showRecentSearches ? recentSearches.length + index : index;
+                        return (
+                          <button
+                            key={`${result.lat}-${result.lon}-${index}`}
+                            role="option"
+                            aria-selected={activeResultIndex === itemIndex}
+                            onClick={() => onSelectAddress(result)}
+                            className={cn(
+                              "flex w-full flex-col rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white/[0.08]",
+                              activeResultIndex === itemIndex && "bg-white/[0.08]"
+                            )}
+                          >
+                            <span className="text-sm leading-relaxed text-zinc-200">{result.display_name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
+                {searchError ? (
+                  <p role="alert" className="mt-2 px-1 text-xs text-amber-300">
+                    {searchError}
+                  </p>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
-                <div ref={menuRef} className="relative">
+                <div
+                  ref={menuRef}
+                  className="relative"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      setMenuOpen(false);
+                    }
+                  }}
+                >
                   <Button
                     variant="outline"
                     onClick={() => setMenuOpen((previous) => !previous)}
                     className="h-11 px-3"
                     aria-expanded={menuOpen}
                     aria-haspopup="menu"
+                    aria-label="Map view options"
                   >
                     <Layers3 size={16} />
                     <ChevronDown size={14} className={cn("transition-transform", menuOpen && "rotate-180")} />
                   </Button>
                   {menuOpen && (
-                    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-white/10 bg-black/[0.92] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                    <div role="menu" aria-label="Map view options" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-white/10 bg-black/[0.92] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={() => {
                           onSetViewMode("normal");
                           setMenuOpen(false);
@@ -180,6 +247,7 @@ export function MainHeader({
                       </button>
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={() => {
                           onSetViewMode("satellite");
                           setMenuOpen(false);
@@ -194,6 +262,7 @@ export function MainHeader({
                       </button>
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={() => {
                           onSetViewMode("blueprint");
                           setMenuOpen(false);
@@ -208,6 +277,7 @@ export function MainHeader({
                       </button>
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={() => {
                           onToggleSolarOverlay();
                           setMenuOpen(false);

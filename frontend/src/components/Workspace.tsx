@@ -284,6 +284,7 @@ function WorkspaceDataPanel({
                   step={0.05}
                   value={detectionConfidenceThreshold}
                   onChange={(event) => onDetectionConfidenceThresholdChange(Number(event.target.value))}
+                  aria-label="Detection confidence threshold"
                   className="mt-3 w-full accent-violet-400"
                 />
               </div>

@@ -248,6 +248,7 @@ export default function App() {
     searchResults,
     recentSearches,
     isSearching,
+    searchError,
     selectAddress,
     handleSearchSubmit,
   } = useAddressSearch({
@@ -264,7 +265,7 @@ export default function App() {
   } = useAutoRoofDetection();
   const { runAutoPackTask, runCapacityTask } = usePanelLayoutWorker();
 
-  const activeRoofFootprint = getActiveRoofFootprint(roofElements);
+  const activeRoofFootprint = useMemo(() => getActiveRoofFootprint(roofElements), [roofElements]);
   const panelLayoutContext = useMemo(
     () => buildPanelLayoutContext(roofElements, obstacleMarkers),
     [roofElements, obstacleMarkers]
@@ -962,15 +963,7 @@ export default function App() {
         "Auto detection failed. This can happen when tile snapshots are blocked by imagery CORS rules. Continue with manual mapping for this location.";
       setDetectionMessage(error instanceof Error ? error.message : fallbackMessage);
     }
-  }, [
-    coordinates,
-    detectFromSnapshot,
-    detectionConfidenceThreshold,
-    mapContainerRef,
-    mapRef,
-    showDetectionPreview,
-    clearDetectionPreview,
-  ]);
+  }, [coordinates, mapContainerRef, mapRef, clearDetectionPreview]);
 
   const runDetectionWithSnapshot = useCallback(async (snapshot: PendingDetection) => {
     const detectionCenter = {
@@ -1087,6 +1080,7 @@ export default function App() {
       <MainHeader
         address={address}
         isSearching={isSearching}
+        searchError={searchError}
         searchResults={searchResults}
         recentSearches={recentSearches}
         coordinates={coordinates}

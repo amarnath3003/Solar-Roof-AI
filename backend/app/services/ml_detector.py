@@ -33,7 +33,6 @@ from app.services.image_processing import (
     _pixel_to_geo,
     _prepare_grayscale,
 )
-from ml import config
 from ml.vectorize import mask_to_polygon, polygon_area_px
 
 _MODEL_NAME = "roof-seg-yolo11-local"

@@ -21,19 +21,11 @@ FastAPI service for automatic roof inference from map snapshots.
 - `GET /health`
 - `POST /api/v1/roof/detect`
 
-## Roboflow Workflow Integration
+## Detection Pipeline
 
-The autodetection endpoint can call a hosted Roboflow Workflow first and will fall back to the local OpenCV pipeline if Roboflow is not configured or fails.
+The detection endpoint prefers the local YOLO11-seg model when a trained checkpoint exists at `ml/weights/roof_seg.pt`, and falls back to the classical OpenCV segmentation pipeline otherwise (or if the ML path fails). See `ml/README.md` for training and checkpoint details.
 
-Set these environment variables before starting the backend:
-
-- `ROBOFLOW_API_KEY` (required to enable Roboflow path)
-- `ROBOFLOW_API_URL` (optional, default: `https://serverless.roboflow.com`)
-- `ROBOFLOW_WORKSPACE` (optional, default: `rooflayout`)
-- `ROBOFLOW_WORKFLOW_ID` (optional, default: `detect-count-and-visualize`)
-- `ROBOFLOW_USE_CACHE` (optional, default: `true`)
-
-When Roboflow is active, response metadata `model` is set to `roboflow-workflow:<workspace>/<workflow_id>`.
+When the ML path is active, response metadata `model` identifies the local segmentation model; fallback responses include the `ML_FALLBACK` warning code.
 
 ### Request payload
 

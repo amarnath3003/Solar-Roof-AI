@@ -15,7 +15,12 @@ const GMAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
 (L as any).drawLocal.edit.toolbar.buttons.remove = 'Delete layers';
 (L as any).drawLocal.edit.toolbar.buttons.removeDisabled = 'No layers to delete';
 
-import { circle as turfCircle } from "@turf/turf";
+import turfCircle from "@turf/circle";
+
+// Monotonic id generator: Date.now() alone collides when several elements are
+// created in the same millisecond (e.g. accepting a multi-plane detection).
+let nextElementId = Date.now();
+const createElementId = () => nextElementId++;
 import { createPanelFeatureAtCenter, validatePanelPlacement } from "@/lib/panelLayout";
 import { SolarHeatmap } from "@/lib/solarHeatmap";
 import {
@@ -233,7 +238,7 @@ export function useLeafletDraw(
       setObstacleMarkers((prev) => [
         ...prev,
         {
-          id: Date.now(),
+          id: createElementId(),
           layerId: id,
           type: "obstacle",
           position: [position.lat, position.lng],
@@ -249,7 +254,7 @@ export function useLeafletDraw(
     setRoofElements((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        id: createElementId(),
         layerId: id,
         type: getGeometryType(layer),
         geoJSON,
@@ -870,7 +875,7 @@ export function useLeafletDraw(
       const layerId = featureGroupRef.current?.getLayerId(polygonLayer) ?? Date.now();
 
       createdRoofElements.push({
-        id: Date.now() + Math.floor(Math.random() * 1000),
+        id: createElementId(),
         layerId,
         type: "polygon",
         geoJSON: polygonLayer.toGeoJSON() as GeoJSON.Feature,
@@ -892,7 +897,7 @@ export function useLeafletDraw(
       const layerId = featureGroupRef.current?.getLayerId(markerLayer) ?? Date.now();
 
       createdObstacles.push({
-        id: Date.now() + Math.floor(Math.random() * 1000),
+        id: createElementId(),
         layerId,
         type: "obstacle",
         position: [lat, lng],

@@ -1,15 +1,12 @@
-import {
-  area as turfArea,
-  bbox as turfBbox,
-  booleanContains,
-  booleanDisjoint,
-  booleanIntersects,
-  buffer as turfBuffer,
-  circle as turfCircle,
-  centerOfMass,
-  point,
-  polygon,
-} from "@turf/turf";
+import turfArea from "@turf/area";
+import turfBbox from "@turf/bbox";
+import booleanContains from "@turf/boolean-contains";
+import booleanDisjoint from "@turf/boolean-disjoint";
+import booleanIntersects from "@turf/boolean-intersects";
+import turfBuffer from "@turf/buffer";
+import turfCircle from "@turf/circle";
+import centerOfMass from "@turf/center-of-mass";
+import { point, polygon } from "@turf/helpers";
 import type { SolarHeatmap } from "@/lib/solarHeatmap";
 import { Coordinates, ObstacleMarker, PanelLayoutContext, PanelTypeDefinition, PanelTypeId, RoofElement } from "@/types";
 
