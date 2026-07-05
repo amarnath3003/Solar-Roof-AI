@@ -15,6 +15,13 @@ RUNS_DIR = Path(os.getenv("ROOF_ML_RUNS_DIR", ML_DIR / "runs"))
 # absent (backend then keeps the classical OpenCV pipeline).
 MODEL_PATH = Path(os.getenv("ROOF_ML_MODEL_PATH", WEIGHTS_DIR / "roof_seg.pt"))
 
+# Sidecar written by ml/train.py at promotion time: records the run name,
+# training imgsz (so serve-time inference matches), and final val metrics.
+MODEL_META_PATH = MODEL_PATH.with_suffix(".json")
+
+# Prior promoted checkpoints (rollback targets), archived by ml/train.py.
+ARCHIVE_DIR = Path(os.getenv("ROOF_ML_ARCHIVE_DIR", WEIGHTS_DIR / "archive"))
+
 # Class-name keywords used to route model classes into the app's two buckets.
 # Matching is substring + case-insensitive, so it survives dataset renames.
 ROOF_KEYWORDS = (

@@ -1,4 +1,5 @@
 import base64
+import logging
 import math
 import time
 import uuid
@@ -6,6 +7,16 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# Single source of truth for the (approximation-grade) obstacle height model,
+# shared by the ML and OpenCV pipelines so both report the same quantity.
+_OBSTACLE_HEIGHT_DIVISOR = 9.0
+
+
+def _estimate_obstacle_height_m(area_px: float) -> float:
+    return max(0.3, min(4.5, math.sqrt(max(area_px, 0.0)) / _OBSTACLE_HEIGHT_DIVISOR))
 
 from app.schemas.detection import (
     DetectionMetadata,
@@ -406,7 +417,7 @@ def _analyze_snapshot_opencv(
         if confidence < req.obstacle_confidence_threshold:
             continue
 
-        estimated_height = max(0.3, min(4.5, (math.sqrt(area) / 8.0)))
+        estimated_height = _estimate_obstacle_height_m(area)
 
         candidate_obstacles.append(
             (
@@ -499,6 +510,7 @@ def analyze_snapshot(req: DetectionRequest) -> DetectionResponse:
                 warnings=warnings,
             )
     except Exception:
+        logger.exception("ML detection pipeline failed; falling back to OpenCV")
         warning_codes.append("ML_FALLBACK")
         warnings.append("Local ML model failed to run; fell back to the OpenCV pipeline.")
 

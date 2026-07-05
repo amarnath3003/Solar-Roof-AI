@@ -5,11 +5,21 @@ FastAPI service for automatic roof inference from map snapshots.
 ## Run
 
 1. Create virtual environment (optional)
-2. Install dependencies:
+2. Install dependencies (torch FIRST so ultralytics doesn't pull the CPU build):
+   - GPU: `python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124`
    - `python -m pip install -r requirements.txt`
    - `python -m pip install -r requirements-dev.txt` (for tests)
 3. Start server:
    - `python -m uvicorn app.main:app --reload`
+
+Environment:
+
+- `CORS_ORIGINS` — comma-separated allowed origins (default: localhost:5173).
+- `LOG_LEVEL` — python logging level (default INFO).
+- `ROOF_ML_MODEL_PATH` — override the serving checkpoint path.
+
+`GET /health` reports `ml_model_loaded`; when false the server is running the
+OpenCV fallback only (no trained checkpoint, or the checkpoint failed to load).
 
 ## Tests
 

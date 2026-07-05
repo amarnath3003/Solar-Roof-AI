@@ -37,6 +37,10 @@ class RoofSegmenter:
         self.model_path = Path(model_path or config.MODEL_PATH)
         self._model = None
         self._device = None
+        # Ultralytics/torch inference is not safe for concurrent calls on one
+        # model instance (FastAPI runs sync endpoints in a threadpool), so all
+        # predictions on this segmenter are serialized.
+        self._predict_lock = threading.Lock()
 
     @classmethod
     def shared(cls, model_path: Optional[Path] = None) -> "RoofSegmenter":
@@ -48,6 +52,19 @@ class RoofSegmenter:
 
     def available(self) -> bool:
         return self.model_path.exists()
+
+    def warmup(self) -> bool:
+        """Load the checkpoint eagerly (e.g. at server startup).
+
+        Returns True when the model is ready, False when no checkpoint exists.
+        Raises if the checkpoint exists but fails to load, so a corrupt model
+        surfaces at startup instead of silently degrading per-request.
+        """
+
+        if not self.available():
+            return False
+        self._ensure_model()
+        return True
 
     def _ensure_model(self):
         if self._model is not None:
@@ -79,16 +96,17 @@ class RoofSegmenter:
         self._ensure_model()
         height, width = image_bgr.shape[:2]
 
-        results = self._model.predict(
-            source=image_bgr,
-            conf=conf,
-            iou=iou,
-            imgsz=imgsz,
-            max_det=max_det,
-            device=self._device,
-            retina_masks=True,   # full-resolution masks -> cleaner vectorization
-            verbose=False,
-        )
+        with self._predict_lock:
+            results = self._model.predict(
+                source=image_bgr,
+                conf=conf,
+                iou=iou,
+                imgsz=imgsz,
+                max_det=max_det,
+                device=self._device,
+                retina_masks=True,   # full-resolution masks -> cleaner vectorization
+                verbose=False,
+            )
         if not results:
             return []
 
@@ -112,11 +130,11 @@ class RoofSegmenter:
                 continue
 
             label = str(names.get(int(classes[i]), str(classes[i])))
-            xs, ys = np.where(binary > 0)
-            if xs.size == 0:
+            row_idx, col_idx = np.where(binary > 0)
+            if row_idx.size == 0:
                 continue
-            y0, y1 = int(xs.min()), int(xs.max())
-            x0, x1 = int(ys.min()), int(ys.max())
+            y0, y1 = int(row_idx.min()), int(row_idx.max())
+            x0, x1 = int(col_idx.min()), int(col_idx.max())
 
             instances.append(
                 Instance(

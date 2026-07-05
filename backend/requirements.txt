@@ -1,9 +1,15 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
-opencv-python-headless==4.11.0.86
+# Full (non-headless) build: ultralytics declares opencv-python, and installing
+# both variants makes their files overwrite each other. One variant only.
+opencv-python==4.11.0.86
 numpy==2.2.5
 pydantic==2.11.3
 python-multipart==0.0.20
 # Local roof-segmentation model + polygon regularization (replaces Roboflow).
-ultralytics==8.3.0
+# NOTE: install torch BEFORE this file so ultralytics does not choose for you.
+# Serving (CPU is fine): pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
+# Training (CUDA 12.4):  pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124 --no-cache-dir
+# (--no-cache-dir avoids a pip MemoryError on the multi-GB CUDA wheel.)
+ultralytics==8.4.84
 shapely==2.0.6

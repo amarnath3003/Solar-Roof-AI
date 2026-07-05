@@ -7,6 +7,8 @@ and reuses the geo/measurement helpers that already back the OpenCV pipeline.
 
 from __future__ import annotations
 
+import json
+import logging
 import math
 import time
 import uuid
@@ -14,6 +16,8 @@ from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from app.schemas.detection import (
     DetectionMetadata,
@@ -28,11 +32,13 @@ from app.services.image_processing import (
     PixelToGeoContext,
     _area_px_to_sq_m,
     _bbox_iou,
+    _estimate_obstacle_height_m,
     _estimate_slope,
     _image_quality_score,
     _pixel_to_geo,
     _prepare_grayscale,
 )
+from ml import config as ml_config
 from ml.vectorize import mask_to_polygon, polygon_area_px
 
 _MODEL_NAME = "roof-seg-yolo11-local"
@@ -46,6 +52,7 @@ def model_available() -> bool:
 
         return RoofSegmenter.shared().available()
     except Exception:
+        logger.exception("ML model availability check failed; treating model as unavailable")
         return False
 
 
@@ -132,7 +139,39 @@ def analyze_snapshot_ml(
     return DetectionResponse(roof_planes=roof_planes, obstacles=obstacles, metadata=metadata)
 
 
+# Cache for the training-metadata imgsz: (meta file mtime, imgsz or None).
+_meta_imgsz_cache: Tuple[float, Optional[int]] = (-1.0, None)
+
+
+def _training_imgsz() -> Optional[int]:
+    """imgsz the promoted checkpoint was trained at (from its metadata sidecar)."""
+
+    global _meta_imgsz_cache
+    try:
+        mtime = ml_config.MODEL_META_PATH.stat().st_mtime
+    except OSError:
+        return None
+
+    if _meta_imgsz_cache[0] == mtime:
+        return _meta_imgsz_cache[1]
+
+    imgsz: Optional[int] = None
+    try:
+        meta = json.loads(ml_config.MODEL_META_PATH.read_text())
+        imgsz = int(meta["imgsz"])
+    except Exception:
+        logger.warning("Unreadable model metadata at %s; using imgsz heuristic", ml_config.MODEL_META_PATH)
+    _meta_imgsz_cache = (mtime, imgsz)
+    return imgsz
+
+
 def _infer_imgsz(width: int, height: int) -> int:
+    # Prefer the resolution the model was trained at — a train/serve imgsz
+    # mismatch measurably hurts segmentation accuracy.
+    trained = _training_imgsz()
+    if trained:
+        return int(((trained + 31) // 32) * 32)
+
     longest = max(width, height)
     # Round up to a multiple of 32 within the model's comfortable range.
     target = min(1280, max(640, ((longest + 31) // 32) * 32))
@@ -202,7 +241,7 @@ def _build_obstacle(
         return None
 
     location = _pixel_to_geo((cx, cy), ctx)
-    estimated_height = max(0.3, min(4.5, math.sqrt(area_px) / 9.0))
+    estimated_height = _estimate_obstacle_height_m(area_px)
     return Obstacle(
         id=f"obstacle_{uuid.uuid4().hex[:8]}",
         confidence=round(float(inst.confidence), 3),
